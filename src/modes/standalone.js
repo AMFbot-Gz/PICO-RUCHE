@@ -99,6 +99,14 @@ export function startStandaloneServer(deps) {
         "GET  /api/selfdev/analyze",
         "POST /api/search",
         "POST /api/process/restart",
+        "GET  /mcp/health",
+        "POST /mcp/os-control",
+        "POST /mcp/terminal",
+        "POST /mcp/vision",
+        "POST /mcp/vault",
+        "POST /mcp/rollback",
+        "POST /mcp/skill-factory",
+        "POST /mcp/janitor",
       ],
     })
   );
