@@ -3,9 +3,9 @@ set -euo pipefail
 RED='\033[0;31m'; GREEN='\033[0;32m'; AMBER='\033[0;33m'; NC='\033[0m'
 PASS=0; WARN=0; FAIL=0; BLOCK=false
 
-ok()   { echo -e "${GREEN}✅${NC} $1"; ((PASS++)); }
-warn() { echo -e "${AMBER}⚡${NC} $1"; ((WARN++)); }
-fail() { echo -e "${RED}❌${NC} $1"; ((FAIL++)); BLOCK=true; }
+ok()   { echo -e "${GREEN}✅${NC} $1"; PASS=$((PASS+1)); }
+warn() { echo -e "${AMBER}⚡${NC} $1"; WARN=$((WARN+1)); }
+fail() { echo -e "${RED}❌${NC} $1"; FAIL=$((FAIL+1)); BLOCK=true; }
 
 echo ""; echo "🐝 PICO-RUCHE — Phase Check"; echo "================================"
 
@@ -40,12 +40,23 @@ which claude > /dev/null 2>&1 && ok "claude CLI" || warn "claude CLI absent"
 which aider > /dev/null 2>&1 && ok "Aider" || warn "Aider absent → pip3 install aider-chat"
 
 echo ""; echo "PHASE 5 — Tests"
+set +e
 JEST_OUT=$(npm run test:unit -- --silent 2>&1)
+JEST_RC=$?
 JEST_PASS=$(echo "$JEST_OUT" | grep -oE '[0-9]+ passed' | tail -1 | awk '{print $1}')
 JEST_FAIL=$(echo "$JEST_OUT" | grep -oE '[0-9]+ failed' | tail -1 | awk '{print $1}')
-[ "${JEST_FAIL:-0}" = "0" ] && ok "Jest : ${JEST_PASS:-?} tests verts ✅" || fail "Jest : ${JEST_FAIL} tests échoués — ne pas déployer"
+if [ "$JEST_RC" = "0" ] && [ "${JEST_FAIL:-0}" = "0" ]; then
+  ok "Jest : ${JEST_PASS:-?} tests verts ✅"
+else
+  fail "Jest : ${JEST_FAIL:-?} tests échoués (rc=$JEST_RC) — ne pas déployer"
+fi
 PY_OUT=$(python3 -m pytest tests/ -q --tb=no 2>&1 | tail -1)
-echo "$PY_OUT" | grep -q "passed" && ok "pytest Python : $PY_OUT" || fail "pytest Python échoué — ne pas déployer"
+if echo "$PY_OUT" | grep -q "passed"; then
+  ok "pytest Python : $PY_OUT"
+else
+  fail "pytest Python échoué — ne pas déployer"
+fi
+set -e
 
 echo ""; echo "================================"
 echo "Résultat : ✅ $PASS  ⚡ $WARN  ❌ $FAIL"
