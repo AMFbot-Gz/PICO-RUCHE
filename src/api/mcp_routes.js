@@ -1,7 +1,7 @@
 /**
  * src/api/mcp_routes.js — Routes MCP REST pour LaRuche v4.1
  *
- * Monte les 7 endpoints MCP sur l'app Hono :
+ * Monte les 8 endpoints MCP sur l'app Hono :
  *   POST /mcp/os-control    — HID souris/clavier/screenshot (os_control_mcp)
  *   POST /mcp/terminal      — exec, execSafe, listProcesses (terminal_mcp)
  *   POST /mcp/vision        — analyzeScreen, findElement, watchChange (vision_mcp)
@@ -9,6 +9,7 @@
  *   POST /mcp/rollback      — createSnapshot, listSnapshots, restore (rollback_mcp)
  *   POST /mcp/skill-factory — createSkill, evolveSkill, listSkills (skill_factory_mcp)
  *   POST /mcp/janitor       — purgeTemp, rotateLogs, gcRAM (janitor_mcp)
+ *   POST /mcp/pencil        — contrôle Pencil.app via AppleScript (pencil_mcp)
  *
  * Chaque route reçoit { tool, action, params } et dispatche vers la logique du
  * MCP server correspondant. Les MCP servers Node.js utilisent stdio — on
@@ -805,6 +806,143 @@ async function handleJanitor(action, params = {}) {
   }
 }
 
+// ─── PENCIL ───────────────────────────────────────────────────────────────────
+
+import { exec as _exec } from "child_process";
+import { promisify as _promisify } from "util";
+const _execAsync = _promisify(_exec);
+
+const PENCIL_APP   = "Pencil";
+const PENCIL_PATH  = "/Applications/Pencil.app";
+
+async function _pencilRunning() {
+  try {
+    const { stdout } = await _execAsync(`pgrep -x "${PENCIL_APP}" 2>/dev/null || echo ""`);
+    return stdout.trim().length > 0;
+  } catch { return false; }
+}
+
+async function _runAS(script) {
+  const tmp = join(ROOT, ".laruche/temp/pencil_as.scpt");
+  writeFileSync(tmp, script, "utf8");
+  const { stdout, stderr } = await _execAsync(`osascript "${tmp}"`);
+  return { stdout: stdout.trim(), stderr: stderr.trim() };
+}
+
+async function handlePencil(action, params = {}) {
+  switch (action) {
+    case "open_app": {
+      try {
+        const running = await _pencilRunning();
+        if (running) {
+          await _runAS(`tell application "${PENCIL_APP}" to activate`);
+          return { success: true, action: "activated", message: "Pencil activé." };
+        }
+        await _execAsync(`open -a "${PENCIL_PATH}"`);
+        let ready = false;
+        for (let i = 0; i < 8; i++) {
+          await new Promise(r => setTimeout(r, 1000));
+          if (await _pencilRunning()) { ready = true; break; }
+        }
+        return { success: true, action: "launched", ready };
+      } catch (e) { return { success: false, error: e.message }; }
+    }
+
+    case "new_document": {
+      try {
+        if (!await _pencilRunning()) {
+          await _execAsync(`open -a "${PENCIL_PATH}"`);
+          await new Promise(r => setTimeout(r, 3000));
+        }
+        await _runAS(`
+tell application "${PENCIL_APP}" to activate
+tell application "System Events"
+  tell process "${PENCIL_APP}"
+    keystroke "n" using command down
+  end tell
+end tell`);
+        return { success: true, message: "Nouveau document créé." };
+      } catch (e) { return { success: false, error: e.message }; }
+    }
+
+    case "open_file": {
+      const { path: fp } = params;
+      if (!fp) return { success: false, error: "Paramètre 'path' requis" };
+      try {
+        if (!existsSync(fp)) return { success: false, error: `Fichier introuvable: ${fp}` };
+        await _execAsync(`open -a "${PENCIL_PATH}" "${fp}"`);
+        await new Promise(r => setTimeout(r, 1500));
+        return { success: true, message: `Fichier ouvert: ${fp}` };
+      } catch (e) { return { success: false, error: e.message }; }
+    }
+
+    case "screenshot": {
+      try {
+        if (!await _pencilRunning()) return { success: false, error: "Pencil n'est pas ouvert." };
+        await _runAS(`tell application "${PENCIL_APP}" to activate`);
+        await new Promise(r => setTimeout(r, 300));
+        const name = params.filename || `pencil_${Date.now()}`;
+        const outPath = join(SCREENSHOTS_DIR, `${name}.png`);
+        await _execAsync(`screencapture -x "${outPath}"`);
+        return { success: true, path: outPath };
+      } catch (e) { return { success: false, error: e.message }; }
+    }
+
+    case "get_windows": {
+      try {
+        if (!await _pencilRunning()) return { success: true, running: false, windows: [] };
+        const { stdout } = await _runAS(`
+set winList to {}
+tell application "${PENCIL_APP}"
+  repeat with w in windows
+    set end of winList to name of w
+  end repeat
+end tell
+return winList`);
+        const windows = stdout ? stdout.split(", ").filter(Boolean) : [];
+        return { success: true, running: true, count: windows.length, windows };
+      } catch (e) { return { success: false, error: e.message }; }
+    }
+
+    case "click_menu": {
+      const { menu, item, submenu } = params;
+      if (!menu || !item) return { success: false, error: "Paramètres 'menu' et 'item' requis" };
+      try {
+        if (!await _pencilRunning()) return { success: false, error: "Pencil n'est pas ouvert." };
+        await _runAS(`tell application "${PENCIL_APP}" to activate`);
+        const script = submenu
+          ? `tell application "System Events"\n  tell process "${PENCIL_APP}"\n    click menu item "${submenu}" of menu "${menu}" of menu bar 1\n    click menu item "${item}" of menu 1 of menu item "${submenu}" of menu "${menu}" of menu bar 1\n  end tell\nend tell`
+          : `tell application "System Events"\n  tell process "${PENCIL_APP}"\n    click menu item "${item}" of menu "${menu}" of menu bar 1\n  end tell\nend tell`;
+        await _runAS(script);
+        return { success: true, message: `Menu ${menu}${submenu ? ' > ' + submenu : ''} > ${item} cliqué.` };
+      } catch (e) { return { success: false, error: e.message }; }
+    }
+
+    case "focus_window": {
+      try {
+        if (!await _pencilRunning()) return { success: false, error: "Pencil n'est pas ouvert." };
+        await _runAS(`tell application "${PENCIL_APP}"\n  activate\n  set frontmost to true\nend tell`);
+        return { success: true, message: "Pencil mis au premier plan." };
+      } catch (e) { return { success: false, error: e.message }; }
+    }
+
+    case "close_app": {
+      try {
+        if (!await _pencilRunning()) return { success: true, message: "Pencil n'était pas ouvert." };
+        if (params.force) {
+          await _execAsync(`pkill -x "${PENCIL_APP}" 2>/dev/null || true`);
+          return { success: true, action: "force_killed" };
+        }
+        await _runAS(`tell application "${PENCIL_APP}" to quit`);
+        return { success: true, action: "quit" };
+      } catch (e) { return { success: false, error: e.message }; }
+    }
+
+    default:
+      return { success: false, error: `Action Pencil inconnue: ${action}`, code: "UNKNOWN_ACTION" };
+  }
+}
+
 // ─── Montage des routes sur l'app Hono ────────────────────────────────────────
 
 /**
@@ -909,6 +1047,21 @@ export function createMcpRoutes(app) {
     }
   });
 
+  // ── POST /mcp/pencil ─────────────────────────────────────────────────────────
+  // Contrôle Pencil.app (prototypage / wireframing) via AppleScript
+  app.post("/mcp/pencil", async (c) => {
+    const body = await parseBody(c);
+    if (!body) return mcpError(c, "Body JSON invalide");
+    const { action, params = {} } = body;
+    if (!action) return mcpError(c, "Champ 'action' requis");
+    try {
+      const result = await handlePencil(action, params);
+      return c.json(result);
+    } catch (e) {
+      return c.json({ success: false, error: e.message, code: "INTERNAL_ERROR" }, 500);
+    }
+  });
+
   // ── GET /mcp/health ──────────────────────────────────────────────────────────
   // Endpoint utilitaire pour vérifier que les routes MCP sont montées
   app.get("/mcp/health", (c) =>
@@ -922,6 +1075,7 @@ export function createMcpRoutes(app) {
         "POST /mcp/rollback",
         "POST /mcp/skill-factory",
         "POST /mcp/janitor",
+        "POST /mcp/pencil",
       ],
     })
   );

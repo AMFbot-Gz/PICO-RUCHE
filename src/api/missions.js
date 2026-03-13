@@ -773,6 +773,16 @@ export function createMissionsRoutes(app, deps) {
     return c.json({ success: true });
   });
 
+  // ─── PATCH /api/goals/:id/status ─────────────────────────────────────────────
+  app.patch('/api/goals/:id/status', async (c) => {
+    let body; try { body = await c.req.json(); } catch { return c.json({ error: 'Body invalide' }, 400); }
+    if (!body?.status) return c.json({ error: 'Champ status requis' }, 400);
+    const { updateGoalStatus, getGoal } = await import('../temporal/index.js');
+    const ok = updateGoalStatus(c.req.param('id'), body.status);
+    if (!ok) return c.json({ error: 'But introuvable ou transition invalide' }, 404);
+    return c.json({ success: true, goal: getGoal(c.req.param('id')) });
+  });
+
   // ─── SIMULATION ───────────────────────────────────────────────────────────────
   app.post('/api/simulate', async (c) => {
     let body; try { body = await c.req.json(); } catch { return c.json({ error: 'Body invalide' }, 400); }
