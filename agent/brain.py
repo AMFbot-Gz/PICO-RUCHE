@@ -322,7 +322,8 @@ Maximum {CONFIG['brain']['max_subtasks']} sous-tâches. Réponds UNIQUEMENT en J
     {{
       "id": "1",
       "role": "shell|vision|worker|strategist",
-      "instruction": "instruction précise et auto-suffisante",
+      "instruction": "description humaine de la tâche",
+      "command": "UNIQUEMENT pour role=shell : la commande bash exacte, ex: ls -la",
       "risk": "low|medium|high",
       "confidence": 0.85,
       "depends_on": [],
@@ -346,8 +347,12 @@ Maximum {CONFIG['brain']['max_subtasks']} sous-tâches. Réponds UNIQUEMENT en J
 ## Rôles disponibles
 
 - **shell**: commande terminal via executor sandboxé
+  ⚠️ IMPORTANT : pour role=shell, "instruction" doit être LA COMMANDE BASH EXACTE à exécuter,
+  PAS une description en langage naturel. Exemples corrects :
+  ✅ "ls -la"  ✅ "cat /etc/hosts"  ✅ "python3 script.py"
+  ❌ "Exécuter la commande ls -la"  ❌ "Lister les fichiers"
 - **vision**: capture + analyse visuelle de l'écran
-- **worker**: tâche de réflexion/génération via LLM
+- **worker**: tâche de réflexion/génération via LLM (instruction = prompt en langage naturel)
 - **strategist**: planification ou analyse complexe via LLM haute qualité
 {f"{chr(10)}{extra_context}" if extra_context else ""}"""
     messages.append({"role": "user", "content": req.mission})

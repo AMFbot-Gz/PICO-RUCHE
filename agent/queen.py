@@ -485,10 +485,25 @@ async def _run_subtask(subtask: dict, input_text: str, mission_id: str) -> dict:
     # Exécution directe selon le rôle
     try:
         if role == "shell":
+            # Extraire la commande bash réelle depuis l'instruction.
+            # Le LLM peut générer des préfixes parasites ("run_shell", "Exécuter:", etc.)
+            # On utilise le champ "command" si présent, sinon on nettoie l'instruction.
+            raw_cmd = subtask.get("command") or instruction
+            _prefixes = (
+                "run_shell ", "shell: ", "shell:", "execute: ", "execute:",
+                "exécuter: ", "exécuter:", "exécute: ", "exécute:",
+                "commande: ", "commande:", "cmd: ", "cmd:",
+                "bash: ", "bash -c ", "sh -c ",
+            )
+            shell_cmd = raw_cmd.strip()
+            for _p in _prefixes:
+                if shell_cmd.lower().startswith(_p.lower()):
+                    shell_cmd = shell_cmd[len(_p):].strip().strip('"\'')
+                    break
             async with httpx.AsyncClient(timeout=35) as c:
                 r = await c.post(
                     f"http://localhost:{PORTS['executor']}/shell",
-                    json={"command": instruction}
+                    json={"command": shell_cmd}
                 )
             return {"subtask": sid, "result": r.json()}
         elif role == "vision":
