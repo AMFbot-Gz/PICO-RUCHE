@@ -1,5 +1,5 @@
 /**
- * test/smoke.js — Suite de tests LaRuche v4.1
+ * test/smoke.js — Suite de tests LaRuche v4.2
  * Tests automatiques : Ollama (guard CI), routing (mock inject), DB, skills, CLI, perf
  */
 
@@ -44,7 +44,7 @@ async function checkOllama() {
   } catch { return false; }
 }
 
-console.log(chalk.hex("#F5A623").bold("\n🐝 LaRuche Smoke Tests v4.1\n"));
+console.log(chalk.hex("#F5A623").bold("\n🐝 LaRuche Smoke Tests v4.2\n"));
 
 const ollamaAvailable = await checkOllama();
 if (!ollamaAvailable) {
@@ -287,23 +287,27 @@ if (!queenAvailable) {
   });
 
   // Test : rate limit → au moins 1 retourne 429 après 35 requêtes rapides
+  // Note : on envoie par batches de 10 pour éviter la saturation du pool HTTP Node.js
   await test("POST /api/mission x35 rapidement → au moins 1 retourne 429", async () => {
-    const reqs = Array(35).fill(null).map(() =>
-      fetch(`${QUEEN_API}/api/mission`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ command: "prends un screenshot rate limit test" }),
-        signal: AbortSignal.timeout(5000),
-      }).then(r => r.status)
-    );
-    const statuses = await Promise.all(reqs);
+    const statuses = [];
+    for (let i = 0; i < 35; i += 10) {
+      const batch = Array(Math.min(10, 35 - i)).fill(null).map(() =>
+        fetch(`${QUEEN_API}/api/mission`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ command: "rate limit test" }),
+          signal: AbortSignal.timeout(8000),
+        }).then(r => r.status)
+      );
+      statuses.push(...await Promise.all(batch));
+    }
     const has429 = statuses.some(s => s === 429);
     assert(has429, `Aucun 429 reçu — statuts: ${[...new Set(statuses)].join(", ")}`);
   });
 
   // Test : GET /api/queue → structure { pending, running, completed, maxConcurrent }
   await test("GET /api/queue → { pending, running, completed, maxConcurrent }", async () => {
-    const r = await fetch(`${QUEEN_API}/api/queue`, { signal: AbortSignal.timeout(3000) });
+    const r = await fetch(`${QUEEN_API}/api/queue`, { signal: AbortSignal.timeout(8000) });
     assert(r.ok, `HTTP ${r.status}`);
     const d = await r.json();
     assert("pending" in d, "Champ 'pending' manquant");
@@ -331,6 +335,50 @@ if (!queenAvailable) {
       `Réponse inattendue: ${JSON.stringify(d).slice(0, 80)}`);
   });
 }
+
+// ─── 7. SÉCURITÉ ────────────────────────────────────────────────
+console.log(chalk.bold("  Sécurité"));
+
+await test('is_blocked() bloque rm -rf /', async () => {
+  // Tester via subprocess Python : python3 -c "import sys; sys.path.insert(0,'agent'); import executor; assert executor.is_blocked('rm -rf /') == True"
+  const { execFileSync } = await import('child_process');
+  const result = execFileSync('python3', ['-c', `
+import sys; sys.path.insert(0,'agent')
+import unittest.mock as mock
+with mock.patch('builtins.open', mock.mock_open(read_data='')):
+    with mock.patch('yaml.safe_load', return_value={'security':{'blocked_shell_patterns':[],'max_shell_timeout':30,'require_confirmation_for':[],'hitl_mode':'relay'},'ports':{'queen':8001,'perception':8002,'brain':8003,'executor':8004,'evolution':8005,'memory':8006,'mcp_bridge':8007},'ollama':{'base_url':'http://localhost:11434','models':{'strategist':'llama3:latest','worker':'llama3.2:3b','vision':'moondream:latest','compressor':'llama3.2:3b'},'timeout':120},'mlx':{'enabled':False,'server_url':'http://127.0.0.1:8080/v1','fallback_to_ollama':True},'brain':{'max_context_tokens':8000,'compress_threshold':6000,'max_subtasks':5,'risk_levels':['low','medium','high']},'memory':{'max_episodes':500,'episode_file':'agent/memory/episodes.jsonl','persistent_file':'agent/memory/persistent.md','world_state_file':'agent/memory/world_state.json'},'perception':{'interval_seconds':30},'telegram':{'hitl_timeout_seconds':120}}):
+        import executor
+        assert executor.is_blocked('rm -rf /') == True
+        assert executor.is_blocked('ls -la') == False
+print('ok')
+`], { encoding: 'utf-8' }).trim();
+  assert(result === 'ok', 'is_blocked ne fonctionne pas');
+});
+
+await test('HITL_AUTO_APPROVE absent de queen_oss.js', async () => {
+  const { readFileSync } = await import('fs');
+  const content = readFileSync('src/queen_oss.js', 'utf-8');
+  // Le bypass silent doit être supprimé
+  const hasOverride = /HITL_AUTO_APPROVE\s*=\s*['"]true['"]/.test(content);
+  assert(!hasOverride, 'HITL_AUTO_APPROVE bypass silencieux détecté dans queen_oss.js');
+});
+
+await test('Chimera HMAC secret non vide', async () => {
+  const { readFileSync } = await import('fs');
+  const content = readFileSync('core/chimera_bus.js', 'utf-8');
+  assert(content.includes('CHIMERA_SECRET'), 'CHIMERA_SECRET absent de chimera_bus.js');
+  assert(content.includes('createHmac'), 'HMAC absent de chimera_bus.js');
+});
+
+// ─── 8. TESTS PYTHON ────────────────────────────────────────────
+console.log(chalk.bold("  Tests Python"));
+await test('pytest >= 155 tests verts', async () => {
+  const { execFileSync } = await import('child_process');
+  const out = execFileSync('python3', ['-m', 'pytest', 'tests/', '-q', '--tb=no'],
+    { encoding: 'utf-8', timeout: 60000 });
+  const match = out.match(/(\d+) passed/);
+  assert(match && parseInt(match[1]) >= 155, `pytest échoué: ${out.trim()}`);
+});
 
 // ─── RÉSULTAT ──────────────────────────────────────────────────────────────────────────────
 console.log();

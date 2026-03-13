@@ -68,3 +68,13 @@ export async function query(sql, params = []) {
   stmt.free();
   return rows;
 }
+
+// Alias sémantiques — get() retourne la première ligne ou null, all() retourne tout
+export async function get(sql, params = []) {
+  const rows = await query(sql, params);
+  return rows[0] ?? null;
+}
+
+export async function all(sql, params = []) {
+  return query(sql, params);
+}

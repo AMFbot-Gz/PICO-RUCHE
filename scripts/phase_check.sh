@@ -24,7 +24,7 @@ echo "$MODELS" | grep -qi "llama3.2" && ok "Worker : llama3.2:3b" || warn "Worke
 echo "$MODELS" | grep -qi "moondream\|llava" && ok "Vision : $(echo "$MODELS" | grep -iE 'moondream|llava' | head -1 | awk '{print $1}')" || warn "Vision absent → ollama pull moondream"
 
 echo ""; echo "PHASE 2 — MLX (optionnel)"
-python3 -c "import mlx_lm" 2>/dev/null && ok "MLX installé — boost M2 actif" || warn "MLX absent → npm run install-mlx"
+python3 -c "import mlx_lm" 2>/dev/null && ok "MLX installé (optionnel — Apple Silicon)" || warn "MLX absent (optionnel) → npm run install-mlx"
 
 echo ""; echo "PHASE 3 — .env"
 [ -f ".env" ] || fail ".env absent → cp .env.example .env"
@@ -40,7 +40,12 @@ which claude > /dev/null 2>&1 && ok "claude CLI" || warn "claude CLI absent"
 which aider > /dev/null 2>&1 && ok "Aider" || warn "Aider absent → pip3 install aider-chat"
 
 echo ""; echo "PHASE 5 — Tests"
-npm run test:unit > /dev/null 2>&1 && ok "153 tests verts ✅" || fail "Tests échoués — ne pas déployer"
+JEST_OUT=$(npm run test:unit -- --silent 2>&1)
+JEST_PASS=$(echo "$JEST_OUT" | grep -oE '[0-9]+ passed' | tail -1 | awk '{print $1}')
+JEST_FAIL=$(echo "$JEST_OUT" | grep -oE '[0-9]+ failed' | tail -1 | awk '{print $1}')
+[ "${JEST_FAIL:-0}" = "0" ] && ok "Jest : ${JEST_PASS:-?} tests verts ✅" || fail "Jest : ${JEST_FAIL} tests échoués — ne pas déployer"
+PY_OUT=$(python3 -m pytest tests/ -q --tb=no 2>&1 | tail -1)
+echo "$PY_OUT" | grep -q "passed" && ok "pytest Python : $PY_OUT" || fail "pytest Python échoué — ne pas déployer"
 
 echo ""; echo "================================"
 echo "Résultat : ✅ $PASS  ⚡ $WARN  ❌ $FAIL"

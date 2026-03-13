@@ -30,9 +30,9 @@ status:
 test-python:
 	$(PYTHON) -m pytest tests/ -v --tb=short
 
-## Lance la suite de tests complète (Python + Node.js)
+## Lance la suite de tests complète (pytest + Jest unit + intégration)
 test: test-python
-	npm run test:unit
+	npm test
 
 ## Vérifie les prérequis (ollama, modèles, .env, dépendances)
 preflight:
@@ -40,7 +40,7 @@ preflight:
 
 ## Installe les dépendances Python et Node.js
 install:
-	$(PYTHON) -m pip install -r requirements_agent.txt
+	$(PYTHON) -m pip install -r requirements.txt
 	npm install
 
 ## Suit les logs en temps réel (toutes les couches)

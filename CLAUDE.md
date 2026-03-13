@@ -43,7 +43,7 @@ python3 scripts/status_agent.py       # tableau 8 couches + latences
 make status
 
 # Tests
-npm test                              # 178 tests Jest
+npm test                              # 185 tests Jest
 make test
 
 # Arrêter
@@ -128,7 +128,9 @@ mcp_servers/              ← 9 MCP servers (os-control, terminal, vision...)
 ## Tests
 
 ```bash
-npm test                  # 178 tests (20 suites)
+make test                 # pytest (Python) + Jest (Node.js) — total ~340 tests
+npm test                  # 185 tests Jest (21 suites)
+python3 -m pytest tests/  # ~155 tests Python
 npm run test:smoke        # smoke tests
 ```
 
@@ -140,6 +142,8 @@ ADMIN_TELEGRAM_ID=        # @userinfobot
 STANDALONE_MODE=false
 OLLAMA_HOST=http://localhost:11434
 HITL_TIMEOUT_SECONDS=120
+CHIMERA_SECRET=           # secret HMAC pour la sécurité Chimera Bus
+VOICE_ENABLED=false
 ```
 
 ## Patterns de développement
