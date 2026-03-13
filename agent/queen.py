@@ -56,6 +56,8 @@ DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 VITAL_LOOP_RUNNING = False
 _vital_loop_cycle  = 0          # compteur de cycles pour le heartbeat mémoire (toutes les 4×30s=2min)
 _active_missions   = 0          # missions en cours — utilisé par layer_manager pour bloquer l'hibernation
+_active_vital_missions: set = set()   # actions vitales en cours (anti-avalanche fire-and-forget)
+_anomaly_cooldown: dict = {}           # {action_key: last_ts} — cooldown 5min par type d'anomalie
 
 # ─── HITL Queue ────────────────────────────────────────────────────────────────
 # Structure : { hitl_id: { "action": str, "mission_id": str, "timestamp": datetime,
@@ -348,6 +350,37 @@ async def _handle_telegram_text(text: str):
         get_architecte().reset_history()
         await send_telegram("🔄 Historique de conversation réinitialisé.")
         return
+    if text.startswith("/help"):
+        await send_telegram(
+            "🐝 *PICO-RUCHE — Commandes disponibles*\n\n"
+            "/status — état de toutes les couches\n"
+            "/hitl — actions en attente de validation\n"
+            "/missions — 5 dernières missions\n"
+            "/reset — réinitialise l'historique\n"
+            "/help — ce message\n\n"
+            "ok-XXXX — approuver une action HITL\n"
+            "non-XXXX — rejeter une action HITL\n\n"
+            "_Tout autre message est traité par Claude Architecte._"
+        )
+        return
+    if text.startswith("/missions"):
+        try:
+            async with httpx.AsyncClient(timeout=5) as _mc:
+                _mr = await _mc.get(f"http://localhost:{PORTS['queen']}/missions?limit=5")
+            _ms = _mr.json().get("missions", [])
+            if not _ms:
+                await send_telegram("📋 Aucune mission enregistrée.")
+            else:
+                lines = ["📋 *5 dernières missions :*"]
+                for m in _ms:
+                    icon = "✅" if m.get("status") == "success" else ("❌" if m.get("status") == "failed" else "⏳")
+                    inp = (m.get("input") or "")[:60]
+                    dur = f" ({m.get('duration_ms', 0)}ms)" if m.get("duration_ms") else ""
+                    lines.append(f"{icon} `{inp}`{dur}")
+                await send_telegram("\n".join(lines))
+        except Exception as _me:
+            await send_telegram(f"❌ Erreur récupération missions: `{str(_me)[:100]}`")
+        return
 
     # ── Tout le reste → Claude Architecte ──────────────────────────────────
     # Claude a accès à tous les outils de la ruche via tool use.
@@ -367,10 +400,51 @@ async def _handle_telegram_text(text: str):
 
 # ─── Boucle vitale ─────────────────────────────────────────────────────────────
 
+
+def _extract_json(text: str) -> dict:
+    """Extrait le premier JSON valide d'un texte, même enfoui dans du prose.
+    Trois passes : direct → regex greedy → accolades larges.
+    """
+    import re
+    if not text:
+        return {}
+    # Passe 1 : parsing direct
+    try:
+        return json.loads(text.strip())
+    except (json.JSONDecodeError, ValueError):
+        pass
+    # Passe 2 : regex — cherche l'objet le plus profond (non-nested en premier)
+    for m in re.finditer(r'\{[^{}]*\}', text, re.DOTALL):
+        try:
+            return json.loads(m.group())
+        except (json.JSONDecodeError, ValueError):
+            continue
+    # Passe 3 : accolades ouvrante/fermante les plus larges
+    brace_start = text.find('{')
+    brace_end = text.rfind('}')
+    if brace_start != -1 and brace_end > brace_start:
+        try:
+            return json.loads(text[brace_start:brace_end + 1])
+        except (json.JSONDecodeError, ValueError):
+            pass
+    return {}
+
+
+async def _vital_loop_guardian():
+    """Lance vital_loop et la relance automatiquement si elle crash (Bloquant 4)."""
+    while VITAL_LOOP_RUNNING:
+        try:
+            await vital_loop()
+        except Exception as _guard_err:
+            print(f"[Queen] 🔴 vital_loop crash inattendu: {_guard_err} — restart dans 10s")
+            await asyncio.sleep(10)
+
+
 async def vital_loop():
     global VITAL_LOOP_RUNNING, _vital_loop_cycle
     VITAL_LOOP_RUNNING = True
-    _base_interval = CONFIG["perception"]["interval_seconds"]
+    _base_interval = CONFIG.get("perception", {}).get("interval_seconds", 30)
+    _interval = _base_interval  # valeur par défaut si le 1er cycle plante avant le calcul
     startup_delay = 15
     print(f"[Queen] Boucle vitale démarrée — premier cycle dans {startup_delay}s, puis toutes les {_base_interval}s")
     await asyncio.sleep(startup_delay)
@@ -411,14 +485,29 @@ async def vital_loop():
                             "system": "Tu es un agent autonome. Tu décides si tu dois agir sur la machine."
                         }
                     )
-                try:
-                    dec = json.loads(r.json().get("content", "{}"))
-                except Exception as parse_err:
-                    print(f"[Queen] vital_loop: réponse LLM non-JSON ({parse_err}) → should_act=False")
+                raw_content = r.json().get("content", "")
+                dec = _extract_json(raw_content)
+                if not dec:
+                    print(f"[Queen] vital_loop: réponse LLM non-JSON ({raw_content[:80]!r}) → should_act=False")
                     dec = {"should_act": False}
                 if dec.get("should_act") and dec.get("risk") == "low":
-                    print(f"[Queen] Action autonome: {dec.get('action')}")
-                    asyncio.create_task(execute_mission(dec.get("action", ""), auto=True))
+                    action_str = dec.get("action", "")[:80]
+                    now_ts = time.monotonic()
+                    cooldown_key = f"auto:{action_str[:40]}"
+                    if action_str in _active_vital_missions:
+                        print(f"[Queen] Mission vitale déjà en cours (anti-avalanche): {action_str[:60]}")
+                    elif _anomaly_cooldown.get(cooldown_key, 0) + 300 > now_ts:
+                        print(f"[Queen] Mission vitale en cooldown 5min: {action_str[:60]}")
+                    else:
+                        _anomaly_cooldown[cooldown_key] = now_ts
+                        _active_vital_missions.add(action_str)
+                        print(f"[Queen] Action autonome: {action_str}")
+                        async def _run_and_cleanup(act: str = action_str):
+                            try:
+                                await execute_mission(act, auto=True)
+                            finally:
+                                _active_vital_missions.discard(act)
+                        asyncio.create_task(_run_and_cleanup())
                 elif dec.get("should_act") and dec.get("risk") in ["medium", "high"]:
                     # Throttle 5 minutes par action similaire (fix #9)
                     throttle_key = f"vital:{dec.get('action', '')[:50]}"
@@ -659,7 +748,7 @@ async def lifespan(app: FastAPI):
     await init_db()
     _validate_env()  # Validation des variables d'environnement (fix #7)
     VITAL_LOOP_RUNNING = True   # must be True before tasks start
-    asyncio.create_task(vital_loop())
+    asyncio.create_task(_vital_loop_guardian())   # Bloquant 4 : restart auto si crash
     asyncio.create_task(telegram_polling_loop())
     asyncio.create_task(_get_layer_manager().hibernate_loop())
     print("🐝 PICO-RUCHE Agent actif — port 8001")

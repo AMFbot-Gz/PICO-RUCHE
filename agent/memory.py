@@ -65,17 +65,31 @@ def _read_episodes_safe(filepath: Path) -> list:
 
 
 async def _trim_episodes_if_needed(filepath: Path, max_ep: int) -> None:
-    """Tronque le fichier JSONL aux max_ep épisodes les plus récents."""
+    """Tronque le fichier JSONL aux max_ep épisodes les plus récents.
+    Avant de tronquer, archive les épisodes supprimés dans episodes_archive.jsonl
+    pour ne pas perdre l'apprentissage (correction critique 5.2).
+    """
     try:
         if not filepath.exists():
             return
         lines = [l for l in filepath.read_text(encoding="utf-8").splitlines() if l.strip()]
         if len(lines) <= max_ep:
             return
-        # Garde uniquement les max_ep derniers épisodes
+        to_archive = lines[:-max_ep]   # les plus anciens, qui seront supprimés
         kept = lines[-max_ep:]
+
+        # Archivage des épisodes supprimés — append dans episodes_archive.jsonl
+        archive_path = filepath.parent / "episodes_archive.jsonl"
+        try:
+            with open(archive_path, "a", encoding="utf-8") as af:
+                for line in to_archive:
+                    af.write(line + "\n")
+            print(f"[Memory] 📦 Archivage: {len(to_archive)} épisodes → {archive_path.name}")
+        except Exception as arch_err:
+            print(f"[Memory] ⚠️  Archive error (non-bloquant): {arch_err}")
+
         filepath.write_text("\n".join(kept) + "\n", encoding="utf-8")
-        print(f"[Memory] 🗑️  Trim épisodes: {len(lines)} → {len(kept)}")
+        print(f"[Memory] 🗑️  Trim épisodes: {len(lines)} → {len(kept)} (archivés: {len(to_archive)})")
     except Exception as e:
         print(f"[Memory] ⚠️  Trim error: {e}")
 

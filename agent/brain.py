@@ -30,6 +30,10 @@ MODELS = CONFIG["ollama"]["models"]
 COMPRESS_THRESHOLD = CONFIG["brain"]["compress_threshold"]
 CLAUDE_MODEL = "claude-opus-4-6"
 
+# Circuit breaker : compte les échecs consécutifs par provider
+_provider_failures: dict = {"claude": 0, "kimi": 0, "openai": 0, "ollama": 0, "mlx": 0}
+_PROVIDER_MAX_FAILURES = 3   # après 3 échecs consécutifs, on skip ce provider
+
 
 def claude_available() -> bool:
     """Vérifie si ANTHROPIC_API_KEY est présente et non vide."""
@@ -47,13 +51,21 @@ def mlx_available() -> bool:
 
 
 def estimate_tokens(text: str) -> int:
-    return len(text) // 4
+    """Estime les tokens — ajustement +25% pour le français (plus verbeux que l'anglais)."""
+    # Règle empirique : 1 token ≈ 4 chars anglais ≈ 3.2 chars français
+    # On prend le max entre char-based et word-based pour être conservateur
+    char_est = len(text) // 4
+    word_est = len(text.split()) * 1  # 1 token ≈ 1 mot anglais courant
+    return max(char_est, word_est)
 
 
-async def call_ollama(model: str, messages: list, system: str = "") -> str:
+async def call_ollama(model: str, messages: list, system: str = "", force_json: bool = False) -> str:
+    """Appelle Ollama. force_json=True active format='json' pour éviter le texte conversationnel."""
     payload = {"model": model, "messages": messages, "stream": False}
     if system:
         payload["messages"] = [{"role": "system", "content": system}] + messages
+    if force_json:
+        payload["format"] = "json"
     async with httpx.AsyncClient(timeout=120) as client:
         r = await client.post(f"{OLLAMA_URL}/api/chat", json=payload)
         r.raise_for_status()
@@ -135,32 +147,45 @@ async def call_openai(messages: list, system: str = "") -> str:
 
 async def llm(role: str, messages: list, system: str = "") -> dict:
     """
-    Routing LLM — Claude API prioritaire pour tous les rôles.
-    Fallback : Kimi → OpenAI si Claude échoue.
+    Routing LLM avec circuit breaker par provider.
+    Claude API prioritaire — Kimi → OpenAI en fallback.
+    Un provider est mis en pause après _PROVIDER_MAX_FAILURES échecs consécutifs.
     """
     # 1. Claude API — pour tous les rôles
-    if claude_available():
+    if claude_available() and _provider_failures.get("claude", 0) < _PROVIDER_MAX_FAILURES:
         try:
             content = await call_claude(messages, system)
+            _provider_failures["claude"] = 0   # reset on success
             return {"content": content, "provider": "claude", "model": CLAUDE_MODEL}
         except Exception as e:
-            print(f"[Brain] Claude failed: {e}")
+            _provider_failures["claude"] = _provider_failures.get("claude", 0) + 1
+            print(f"[Brain] Claude failed ({_provider_failures['claude']}/{_PROVIDER_MAX_FAILURES}): {e}")
 
     # 2. Kimi — fallback cloud
-    if os.environ.get("KIMI_API_KEY"):
+    if os.environ.get("KIMI_API_KEY") and _provider_failures.get("kimi", 0) < _PROVIDER_MAX_FAILURES:
         try:
             content = await call_kimi(messages, system)
+            _provider_failures["kimi"] = 0
             return {"content": content, "provider": "kimi", "model": "moonshot-v1-8k"}
         except Exception as e:
-            print(f"[Brain] Kimi failed: {e}")
+            _provider_failures["kimi"] = _provider_failures.get("kimi", 0) + 1
+            print(f"[Brain] Kimi failed ({_provider_failures['kimi']}/{_PROVIDER_MAX_FAILURES}): {e}")
 
     # 3. OpenAI — fallback cloud secondaire
-    if os.environ.get("OPENAI_API_KEY"):
+    if os.environ.get("OPENAI_API_KEY") and _provider_failures.get("openai", 0) < _PROVIDER_MAX_FAILURES:
         try:
             content = await call_openai(messages, system)
+            _provider_failures["openai"] = 0
             return {"content": content, "provider": "openai", "model": os.environ.get("OPENAI_MODEL", "gpt-4o-mini")}
         except Exception as e:
-            print(f"[Brain] OpenAI failed: {e}")
+            _provider_failures["openai"] = _provider_failures.get("openai", 0) + 1
+            print(f"[Brain] OpenAI failed ({_provider_failures['openai']}/{_PROVIDER_MAX_FAILURES}): {e}")
+
+    # Reset circuit breakers si tous ont échoué — pour ne pas bloquer définitivement
+    if all(v >= _PROVIDER_MAX_FAILURES for v in _provider_failures.values() if v > 0):
+        print("[Brain] ⚠️  Tous les circuit breakers ouverts — reset forcé")
+        for k in _provider_failures:
+            _provider_failures[k] = 0
 
     raise RuntimeError("Tous les providers cloud ont échoué — vérifier ANTHROPIC_API_KEY dans .env")
 

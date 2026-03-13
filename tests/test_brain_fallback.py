@@ -88,25 +88,26 @@ class TestBrainStaticAnalysis:
         )
 
     def test_fallback_chain_order(self):
-        """La chaîne de fallback dans llm() doit respecter Claude→MLX→Ollama→Kimi→OpenAI."""
-        # Extrait uniquement le corps de la fonction llm() pour éviter les faux positifs
-        # dus aux définitions des fonctions call_* qui apparaissent avant llm()
+        """La chaîne de fallback dans llm() doit respecter Claude→Kimi→OpenAI.
+        MLX et Ollama sont disponibles comme fonctions mais pas dans le routing principal
+        (Claude API est le provider prioritaire, fallback cloud uniquement).
+        """
         llm_start = self.content.find('async def llm(')
         assert llm_start != -1, "Fonction llm() non trouvée"
         llm_body = self.content[llm_start:]
 
         claude_pos  = llm_body.find('call_claude')
-        mlx_pos     = llm_body.find('call_mlx')
-        ollama_pos  = llm_body.find('call_ollama')
         kimi_pos    = llm_body.find('call_kimi')
         openai_pos  = llm_body.find('call_openai')
 
-        assert all(p != -1 for p in [claude_pos, mlx_pos, ollama_pos, kimi_pos, openai_pos]), \
-            "Un ou plusieurs providers manquants dans llm()"
-        assert claude_pos < mlx_pos < ollama_pos < kimi_pos < openai_pos, (
-            f"Ordre incorrect dans llm(): claude={claude_pos} mlx={mlx_pos} "
-            f"ollama={ollama_pos} kimi={kimi_pos} openai={openai_pos}"
+        assert all(p != -1 for p in [claude_pos, kimi_pos, openai_pos]), \
+            "Providers manquants dans llm() : claude, kimi ou openai introuvable"
+        assert claude_pos < kimi_pos < openai_pos, (
+            f"Ordre incorrect dans llm(): claude={claude_pos} kimi={kimi_pos} openai={openai_pos}"
         )
+        # Les fonctions call_mlx et call_ollama doivent exister (utilisables directement)
+        assert 'async def call_mlx(' in self.content, "call_mlx() doit être défini"
+        assert 'async def call_ollama(' in self.content, "call_ollama() doit être défini"
 
     def test_compress_context_defined(self):
         """compress_context() doit être défini."""

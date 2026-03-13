@@ -72,10 +72,49 @@ async def _gui(fn, *args, **kwargs):
 
 # ─── Sécurité shell ────────────────────────────────────────────────────────────
 
+CMD_MAX_LEN = 2000   # longueur max d'une commande shell — prévient les injections géantes
+
+
 def is_blocked(cmd: str) -> bool:
-    """Vérifie si la commande contient un pattern dangereux (regex, résistant aux variantes)."""
-    normalized = ' '.join(cmd.split())  # normalise les espaces multiples
-    return any(p.search(normalized) for p in _BLOCKED_PATTERNS)
+    """Vérifie si la commande contient un pattern dangereux.
+    Double couche : regex normalisée + tokenisation shlex pour résister aux variantes.
+    """
+    import shlex
+    if len(cmd) > CMD_MAX_LEN:
+        return True   # commande anormalement longue — bloquée par précaution
+    normalized = ' '.join(cmd.split())   # normalise espaces multiples et tabs
+
+    # Couche 1 : regex sur la chaîne normalisée
+    if any(p.search(normalized) for p in _BLOCKED_PATTERNS):
+        return True
+
+    # Couche 2 : tokenisation shlex — détecte les variantes d'encodage et de quoting
+    try:
+        tokens = shlex.split(normalized, posix=True)
+        joined = ' '.join(tokens)
+        if any(p.search(joined) for p in _BLOCKED_PATTERNS):
+            return True
+        # Vérification sémantique des tokens dangereux
+        if tokens:
+            base_cmd = tokens[0].split('/')[-1]   # nom de commande sans chemin absolu
+            _DANGEROUS_CMDS = {'shutdown', 'reboot', 'poweroff', 'halt', 'mkfs', 'dd'}
+            if base_cmd in _DANGEROUS_CMDS:
+                return True
+            # rm avec path absolu système — bloque rm -rf /tmp aussi (prudence)
+            if base_cmd == 'rm' and len(tokens) > 1:
+                flags = [t for t in tokens if t.startswith('-')]
+                paths = [t for t in tokens if not t.startswith('-') and t != 'rm']
+                has_r = any('r' in f.lstrip('-').lower() for f in flags)
+                is_sys_path = any(
+                    p.startswith('/') and any(p.startswith(sp) for sp in ('/', '/etc', '/usr', '/bin', '/sbin', '/lib', '/var', '/System', '/Library'))
+                    for p in paths
+                )
+                if has_r and is_sys_path:
+                    return True
+    except ValueError:
+        # shlex.split() échoue sur les quotes non fermées — on bloque par prudence
+        return True
+    return False
 
 
 def needs_confirm(cmd: str) -> bool:
@@ -190,6 +229,16 @@ async def shell(req: ShellRequest):
     - Sortie tronquée à 10 000 caractères
     - Retourne { stdout, stderr, returncode, blocked }
     """
+    # 0. Limite longueur commande
+    if len(req.command) > CMD_MAX_LEN:
+        return {
+            "stdout": "",
+            "stderr": f"Commande trop longue ({len(req.command)} chars > {CMD_MAX_LEN}) — refusée",
+            "returncode": -1,
+            "blocked": True,
+            "command": req.command[:200] + "...",
+        }
+
     # 1. Vérification patterns bloqués
     if is_blocked(req.command):
         return {
