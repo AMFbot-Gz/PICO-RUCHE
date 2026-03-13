@@ -465,7 +465,8 @@ async def vital_loop():
 
 # ─── Exécution de missions ─────────────────────────────────────────────────────
 
-async def _run_subtask(subtask: dict, input_text: str, mission_id: str) -> dict:
+async def _run_subtask(subtask: dict, input_text: str, mission_id: str,
+                       completed: dict | None = None) -> dict:
     """Exécute une seule sous-tâche — appelé selon le graphe de dépendances (fix #5)."""
     risk = subtask.get("risk", "medium")
     instruction = subtask.get("instruction", "")
@@ -511,10 +512,32 @@ async def _run_subtask(subtask: dict, input_text: str, mission_id: str) -> dict:
                 r = await c.post(f"http://localhost:{PORTS['perception']}/observe")
             return {"subtask": sid, "result": r.json()}
         else:
+            # Enrichir le prompt worker avec les résultats des sous-tâches précédentes
+            deps = subtask.get("depends_on", [])
+            context_parts = []
+            if deps and completed:
+                for dep_id in deps:
+                    dep_result = completed.get(dep_id)
+                    if dep_result:
+                        # Extraire l'output réel (stdout ou contenu brut)
+                        inner = dep_result.get("result", dep_result)
+                        if isinstance(inner, dict):
+                            output = (inner.get("stdout") or inner.get("content")
+                                      or inner.get("output") or json.dumps(inner, ensure_ascii=False))
+                        else:
+                            output = str(inner)
+                        context_parts.append(f"[Résultat {dep_id}]:\n{output[:1500]}")
+            if context_parts:
+                enriched_prompt = (
+                    instruction + "\n\n--- Données disponibles ---\n"
+                    + "\n".join(context_parts)
+                )
+            else:
+                enriched_prompt = instruction
             async with httpx.AsyncClient(timeout=60) as c:
                 r = await c.post(
                     f"http://localhost:{PORTS['brain']}/raw",
-                    json={"role": role, "prompt": instruction}
+                    json={"role": role, "prompt": enriched_prompt}
                 )
             return {"subtask": sid, "result": r.json()}
     except Exception as e:
@@ -558,7 +581,7 @@ async def execute_mission(input_text: str, auto: bool = False) -> dict:
                 ready = remaining[:1]
 
             raw = await asyncio.gather(
-                *[_run_subtask(st, input_text, mission_id) for st in ready],
+                *[_run_subtask(st, input_text, mission_id, completed) for st in ready],
                 return_exceptions=True,
             )
             for st, res in zip(ready, raw):
