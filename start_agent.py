@@ -37,39 +37,11 @@ LAYERS = [
         "emoji": "🧠",
     },
     {
-        "name": "Perception",
-        "file": "agent.perception",
-        "port": 8002,
-        "desc": "moondream",
-        "emoji": "👁 ",
-    },
-    {
-        "name": "Executor",
-        "file": "agent.executor",
-        "port": 8004,
-        "desc": "sandboxé",
-        "emoji": "⚙️ ",
-    },
-    {
         "name": "Memory",
         "file": "agent.memory",
         "port": 8006,
         "desc": "episodes.jsonl",
         "emoji": "💾",
-    },
-    {
-        "name": "Evolution",
-        "file": "agent.evolution",
-        "port": 8005,
-        "desc": "registry.json",
-        "emoji": "🧬",
-    },
-    {
-        "name": "MCP Bridge",
-        "file": "agent.mcp_bridge",
-        "port": 8007,
-        "desc": "→ Node.js :3000",
-        "emoji": "🔌",
     },
     {
         "name": "Queen",
@@ -235,7 +207,7 @@ def main():
     bar = "━" * width
 
     print()
-    print("🐝 PICO-RUCHE v1.0 — Démarrage")
+    print("🐝 PICO-RUCHE v1.1 — Mode éco 3 niveaux — Démarrage")
     print(bar)
 
     # 1. Vérifier ollama
@@ -294,17 +266,13 @@ def main():
     # 4. Tableau de bord ASCII
     print()
     print(bar)
-    print("🐝 PICO-RUCHE v1.0 — Tableau de bord")
+    print("🐝 PICO-RUCHE v1.1 — Mode éco 3 niveaux — Tableau de bord")
     print(bar)
 
     display_order = [
-        ("Brain",      8003, "llama3:latest"),
-        ("Perception", 8002, "moondream"),
-        ("Executor",   8004, "sandboxé"),
-        ("Memory",     8006, "episodes.jsonl"),
-        ("Evolution",  8005, "registry.json"),
-        ("MCP Bridge", 8007, "→ Node.js :3000"),
-        ("Queen",      8001, "boucle 30s"),
+        ("Brain",  8003, "llama3:latest"),
+        ("Memory", 8006, "episodes.jsonl"),
+        ("Queen",  8001, "boucle 30s"),
     ]
 
     for name, port, desc in display_order:
@@ -317,7 +285,7 @@ def main():
     tg = "configuré" if telegram_configured() else "non configuré"
     all_ok = all(s.get("ok") for s in layer_status.values())
     hive_status = "Essaim actif" if all_ok else "Essaim partiel — certaines couches KO"
-    print(f"🐝 {hive_status}  |  Telegram: [{tg}]")
+    print(f"🐝 {hive_status}  |  Telegram: [{tg}]  |  Mode: 3 niveaux (L1 on-demand, L2 planifié)")
     print(bar)
 
     if not all_ok:
@@ -334,7 +302,8 @@ def main():
     print("📡 Status   :  http://localhost:8001/status")
     print("📡 Missions :  http://localhost:8001/missions")
     print("💬 Telegram :  envoie /status à ton bot")
-    print("🔄 Boucle   :  toutes les 30 secondes")
+    print("🔄 Boucle   :  adaptative (10s-5min selon contexte)")
+    print("💤 Niveaux  :  L1 on-demand · L2 planifié (Evolution 1x/h)")
     print()
     print("  → python3 scripts/status_agent.py  (monitoring)")
     print("  → python3 stop_agent.py            (arrêt propre)")

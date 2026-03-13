@@ -45,6 +45,7 @@ _AGENT_DIR = _Path(__file__).resolve().parent
 if str(_AGENT_DIR) not in _sys.path:
     _sys.path.insert(0, str(_AGENT_DIR))
 from claude_architecte import get_architecte
+from layer_manager import get_manager as _get_layer_manager
 
 with open(ROOT / "agent_config.yml") as f:
     CONFIG = yaml.safe_load(f)
@@ -54,6 +55,7 @@ DB_PATH = ROOT / "agent" / "memory" / "missions.db"
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 VITAL_LOOP_RUNNING = False
 _vital_loop_cycle  = 0          # compteur de cycles pour le heartbeat mémoire (toutes les 4×30s=2min)
+_active_missions   = 0          # missions en cours — utilisé par layer_manager pour bloquer l'hibernation
 
 # ─── HITL Queue ────────────────────────────────────────────────────────────────
 # Structure : { hitl_id: { "action": str, "mission_id": str, "timestamp": datetime,
@@ -368,10 +370,9 @@ async def _handle_telegram_text(text: str):
 async def vital_loop():
     global VITAL_LOOP_RUNNING, _vital_loop_cycle
     VITAL_LOOP_RUNNING = True
-    interval = CONFIG["perception"]["interval_seconds"]
-    # Délai initial pour laisser toutes les couches démarrer
+    _base_interval = CONFIG["perception"]["interval_seconds"]
     startup_delay = 15
-    print(f"[Queen] Boucle vitale démarrée — premier cycle dans {startup_delay}s, puis toutes les {interval}s")
+    print(f"[Queen] Boucle vitale démarrée — premier cycle dans {startup_delay}s, puis toutes les {_base_interval}s")
     await asyncio.sleep(startup_delay)
     while VITAL_LOOP_RUNNING:
         try:
@@ -460,7 +461,19 @@ async def vital_loop():
             except Exception as _hb_err:
                 print(f"[Queen] Heartbeat mémoire erreur: {_hb_err}")
 
-        await asyncio.sleep(interval)
+        # Intervalle adaptatif selon le contexte
+        import datetime as _dt
+        _hour = _dt.datetime.now().hour
+        _night = _hour < 7 or _hour >= 23
+        if _night:
+            _interval = 300  # 5 min la nuit
+        elif _vital_loop_cycle % 3 == 0:
+            # Vérifier si machine idle (CPU < 5% selon obs précédente)
+            _cpu = data.get("system", {}).get("cpu_percent", 50) if 'data' in dir() else 50
+            _interval = 300 if _cpu < 5 else _base_interval
+        else:
+            _interval = _base_interval
+        await asyncio.sleep(_interval)
 
 
 # ─── Exécution de missions ─────────────────────────────────────────────────────
@@ -485,7 +498,11 @@ async def _run_subtask(subtask: dict, input_text: str, mission_id: str,
 
     # Exécution directe selon le rôle
     try:
+        # Réveiller la couche on-demand si nécessaire (Level 1)
+        _lm = _get_layer_manager()
         if role == "shell":
+            await _lm.ensure_layer("executor")
+            _lm.touch_layer("executor")
             # Extraire la commande bash réelle depuis l'instruction.
             # Le LLM peut générer des préfixes parasites ("run_shell", "Exécuter:", etc.)
             # On utilise le champ "command" si présent, sinon on nettoie l'instruction.
@@ -508,6 +525,8 @@ async def _run_subtask(subtask: dict, input_text: str, mission_id: str,
                 )
             return {"subtask": sid, "result": r.json()}
         elif role == "vision":
+            await _lm.ensure_layer("perception")
+            _lm.touch_layer("perception")
             async with httpx.AsyncClient(timeout=20) as c:
                 r = await c.post(f"http://localhost:{PORTS['perception']}/observe")
             return {"subtask": sid, "result": r.json()}
@@ -545,8 +564,10 @@ async def _run_subtask(subtask: dict, input_text: str, mission_id: str,
 
 
 async def execute_mission(input_text: str, auto: bool = False) -> dict:
+    global _active_missions
     mission_id = str(uuid.uuid4())[:8]
     start = _now_utc()
+    _active_missions += 1
     await save_mission(mission_id, input_text, "running")
     try:
         async with httpx.AsyncClient(timeout=60) as c:
@@ -623,6 +644,8 @@ async def execute_mission(input_text: str, auto: bool = False) -> dict:
         duration_ms = int((_now_utc() - start).total_seconds() * 1000)
         await save_mission(mission_id, input_text, "failed", result=str(e), duration_ms=duration_ms)
         return {"mission_id": mission_id, "status": "failed", "error": str(e)}
+    finally:
+        _active_missions = max(0, _active_missions - 1)
 
 
 # ─── Lifespan ──────────────────────────────────────────────────────────────────
@@ -638,6 +661,7 @@ async def lifespan(app: FastAPI):
     VITAL_LOOP_RUNNING = True   # must be True before tasks start
     asyncio.create_task(vital_loop())
     asyncio.create_task(telegram_polling_loop())
+    asyncio.create_task(_get_layer_manager().hibernate_loop())
     print("🐝 PICO-RUCHE Agent actif — port 8001")
     yield
     VITAL_LOOP_RUNNING = False
@@ -678,6 +702,12 @@ async def mission(req: MissionRequest):
             f"✅ Mission terminée en {result.get('duration_ms', 0)}ms\n`{req.command}`"
         )
     return result
+
+
+@app.get("/mission/status")
+async def mission_status():
+    """Utilisé par LayerManager pour bloquer l'hibernation pendant une mission."""
+    return {"running": _active_missions > 0, "active_count": _active_missions}
 
 
 @app.get("/missions")
