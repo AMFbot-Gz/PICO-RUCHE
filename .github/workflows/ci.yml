@@ -2,9 +2,9 @@ name: CI — PICO-RUCHE
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, develop, main-pico-ruche]
   pull_request:
-    branches: [main]
+    branches: [main, main-pico-ruche]
 
 jobs:
   # ── Node.js tests ─────────────────────────────────────────────────────────
