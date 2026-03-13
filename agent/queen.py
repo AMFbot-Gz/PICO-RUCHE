@@ -275,7 +275,10 @@ async def vital_loop():
     global VITAL_LOOP_RUNNING
     VITAL_LOOP_RUNNING = True
     interval = CONFIG["perception"]["interval_seconds"]
-    print(f"[Queen] Boucle vitale démarrée — cycle {interval}s")
+    # Délai initial pour laisser toutes les couches démarrer
+    startup_delay = 15
+    print(f"[Queen] Boucle vitale démarrée — premier cycle dans {startup_delay}s, puis toutes les {interval}s")
+    await asyncio.sleep(startup_delay)
     while VITAL_LOOP_RUNNING:
         try:
             async with httpx.AsyncClient(timeout=15) as c:
