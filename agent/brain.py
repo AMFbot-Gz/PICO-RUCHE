@@ -12,6 +12,8 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 from typing import List, Optional, Any
 import yaml
+from dotenv import load_dotenv
+load_dotenv()
 
 with open("agent_config.yml") as f:
     CONFIG = yaml.safe_load(f)
@@ -90,12 +92,15 @@ async def llm(role: str, messages: list, system: str = "") -> dict:
         content = await call_ollama(model, messages, system)
         return {"content": content, "provider": "ollama", "model": model}
     except Exception as e:
-        print(f"[Brain] Ollama failed: {e} → Kimi")
-    try:
-        content = await call_kimi(messages, system)
-        return {"content": content, "provider": "kimi", "model": "moonshot-v1-8k"}
-    except Exception as e:
-        raise RuntimeError(f"Tous les providers ont échoué: {e}")
+        print(f"[Brain] Ollama failed: {e}")
+        # Fallback Kimi uniquement si la clé est présente
+        if os.environ.get("KIMI_API_KEY"):
+            try:
+                content = await call_kimi(messages, system)
+                return {"content": content, "provider": "kimi", "model": "moonshot-v1-8k"}
+            except Exception as e2:
+                raise RuntimeError(f"Ollama + Kimi ont échoué: {e2}")
+        raise RuntimeError(f"Ollama failed (pas de fallback cloud): {e}")
 
 
 async def compress_context(messages: list) -> str:

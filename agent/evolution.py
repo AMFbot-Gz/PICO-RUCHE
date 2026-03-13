@@ -14,6 +14,8 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 from typing import Optional, List
 import yaml
+from dotenv import load_dotenv
+load_dotenv()
 
 with open("agent_config.yml") as f:
     CONFIG = yaml.safe_load(f)
