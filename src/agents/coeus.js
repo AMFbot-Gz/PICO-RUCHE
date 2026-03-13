@@ -13,6 +13,7 @@
  */
 
 import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync } from 'fs';
+import { readFile as readFileAsync, access } from 'fs/promises';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { getAllBalances } from '../market/creditSystem.js';
@@ -114,7 +115,7 @@ export function processTicketApproval(ticketId, approved) {
 }
 
 // ─── AUDIT 1 : Skills lents ────────────────────────────────────────────────────
-function auditSlowSkills() {
+async function auditSlowSkills() {
   const skillDurations = new Map(); // skillName → [duration_ms]
 
   // Sources de logs à scanner
@@ -126,9 +127,9 @@ function auditSlowSkills() {
 
   // Parse les fichiers de log pour les patterns task_done avec duration
   for (const logPath of logSources) {
-    if (!existsSync(logPath)) continue;
+    try { await access(logPath); } catch { continue; }
     try {
-      const content = readFileSync(logPath, 'utf-8');
+      const content = await readFileAsync(logPath, 'utf-8');
       // Pattern: [task_done] skill=<name> duration=<ms>ms
       const re = /task_done.*?skill[=:\s"']+([a-zA-Z0-9_]+)["']?.*?duration[=:\s]+(\d+)/gi;
       let m;
@@ -143,9 +144,10 @@ function auditSlowSkills() {
 
   // Scan mission_log.jsonl pour steps avec duration
   const missionLogPath = join(ROOT, 'data/mission_log.jsonl');
-  if (existsSync(missionLogPath)) {
+  try {
+    await access(missionLogPath);
     try {
-      const lines = readFileSync(missionLogPath, 'utf-8').split('\n').filter(l => l.trim());
+      const lines = (await readFileAsync(missionLogPath, 'utf-8')).split('\n').filter(l => l.trim());
       for (const line of lines) {
         const entry = JSON.parse(line);
         if (Array.isArray(entry.steps)) {
@@ -158,7 +160,7 @@ function auditSlowSkills() {
         }
       }
     } catch { /* json invalide */ }
-  }
+  } catch { /* mission_log.jsonl absent, continuer */ }
 
   // Filtre : moyenne > seuil
   const problems = [];
@@ -189,11 +191,11 @@ function auditLowCredits() {
 }
 
 // ─── AUDIT 3 : Heuristiques à faible confiance ────────────────────────────────
-function auditWeakHeuristics() {
+async function auditWeakHeuristics() {
   const heuristicsPath = join(ROOT, 'agent/memory/heuristics.jsonl');
-  if (!existsSync(heuristicsPath)) return [];
+  try { await access(heuristicsPath); } catch { return []; }
   try {
-    const lines = readFileSync(heuristicsPath, 'utf-8').split('\n').filter(l => l.trim());
+    const lines = (await readFileAsync(heuristicsPath, 'utf-8')).split('\n').filter(l => l.trim());
     const weak = [];
     for (const line of lines) {
       const h = JSON.parse(line);
@@ -211,13 +213,13 @@ function auditWeakHeuristics() {
 // Détecte les valeurs sous-optimales dans agent_config.yml et
 // envoie une commande de mutation directe au Phagocyte via ChimeraBus.
 // Pas de ticket intermédiaire — action immédiate, zéro latence.
-function auditConfigCoherence() {
+async function auditConfigCoherence() {
   const configPath = join(ROOT, 'agent_config.yml');
-  if (!existsSync(configPath)) return [];
+  try { await access(configPath); } catch { return []; }
 
   const actions = [];
   try {
-    const content = readFileSync(configPath, 'utf-8');
+    const content = await readFileAsync(configPath, 'utf-8');
 
     // Règle : vital_loop_interval_sec doit être 30 (optimal)
     const match = content.match(/vital_loop_interval_sec\s*:\s*(\d+)/);
@@ -244,6 +246,76 @@ function auditConfigCoherence() {
     console.error(`[Coeus] auditConfigCoherence error: ${err.message}`);
   }
   return actions;
+}
+
+// ─── AUDIT 5 : Patterns de code dangereux ─────────────────────────────────────
+// Détecte les anti-patterns connus dans les sources Python/JS.
+// Génère des tickets de mutation pour Phagocyte v0.3 (patch_code, inject_line).
+async function auditCodePatterns() {
+  const issues = [];
+
+  // Règle 1 : is_blocked() utilise substring matching (vulnérable)
+  const executorPath = join(ROOT, 'agent/executor.py');
+  try {
+    const src = await readFileAsync(executorPath, 'utf-8');
+    if (src.includes('any(p in cmd for p in BLOCKED)')) {
+      issues.push({
+        type:        'insecure_pattern',
+        component:   'executor.is_blocked',
+        evidence:    'Substring matching sur patterns bloqués — contournable avec variantes (espaces, paths)',
+        suggestion:  'Remplacer par regex compilées avec re.compile()',
+        target_file: 'agent/executor.py',
+      });
+    }
+
+    // Règle 2 : asyncio.Lock non initialisé avant usage
+    if (src.includes('DB_LOCK: asyncio.Lock | None = None') || src.includes('HITL_LOCK: asyncio.Lock | None = None')) {
+      // Vérifie si le guard est présent
+      const queenPath = join(ROOT, 'agent/queen.py');
+      const queenSrc = await readFileAsync(queenPath, 'utf-8');
+      if (!queenSrc.includes('if lock is None') && !queenSrc.includes('if DB_LOCK is None')) {
+        issues.push({
+          type:        'null_lock_usage',
+          component:   'queen.save_mission',
+          evidence:    'DB_LOCK/HITL_LOCK peuvent être None pendant le démarrage',
+          suggestion:  'Ajouter un guard `if lock is None: return` avant async with',
+          target_file: 'agent/queen.py',
+        });
+      }
+    }
+  } catch { /* fichier inaccessible */ }
+
+  // Règle 3 : HITL_AUTO_APPROVE override silencieux dans queen_oss.js
+  const queenOssPath = join(ROOT, 'src/queen_oss.js');
+  try {
+    const src = await readFileAsync(queenOssPath, 'utf-8');
+    if (src.includes('HITL_AUTO_APPROVE') && src.includes("process.env.HITL_AUTO_APPROVE = 'true'")) {
+      issues.push({
+        type:        'hitl_bypass',
+        component:   'queen_oss.startup',
+        evidence:    'HITL_AUTO_APPROVE forcé à true silencieusement au démarrage',
+        suggestion:  'Supprimer le bloc if(!process.env.HITL_AUTO_APPROVE)',
+        target_file: 'src/queen_oss.js',
+      });
+    }
+  } catch { /* fichier inaccessible */ }
+
+  // Règle 4 : Episodes JSONL avec guard 1MB (trim trop tardif)
+  const memoryPath = join(ROOT, 'agent/memory.py');
+  try {
+    const src = await readFileAsync(memoryPath, 'utf-8');
+    if (src.includes('1_000_000') || src.includes('1000000')) {
+      issues.push({
+        type:        'unbounded_file_growth',
+        component:   'memory.episodes',
+        evidence:    'Trim épisodes déclenché seulement après 1MB (≈5000 épisodes au lieu de 500)',
+        suggestion:  'Supprimer le guard de taille, déclencher trim à chaque save',
+        target_file: 'agent/memory.py',
+      });
+    }
+  } catch { /* fichier inaccessible */ }
+
+  return issues;
 }
 
 // ─── Création d'un ticket de mutation ─────────────────────────────────────────
@@ -278,8 +350,15 @@ export async function auditPerformance() {
     console.info('[Coeus] 🔍 Audit de performance démarré...');
     const t0 = Date.now();
 
+    // Audits 1, 2, 3 en parallèle (I/O async non bloquantes)
+    const [slowSkills, lowCredits, weakH] = await Promise.all([
+      auditSlowSkills(),
+      Promise.resolve(auditLowCredits()),
+      auditWeakHeuristics(),
+    ]);
+
     // 1. Skills lents
-    for (const { skill, avg_ms, runs } of auditSlowSkills()) {
+    for (const { skill, avg_ms, runs } of slowSkills) {
       tickets.push(createMutationTicket({
         type:        'slow_skill',
         skill,
@@ -292,7 +371,7 @@ export async function auditPerformance() {
     }
 
     // 2. Agents à faibles crédits
-    for (const { agent, credits } of auditLowCredits()) {
+    for (const { agent, credits } of lowCredits) {
       tickets.push(createMutationTicket({
         type:        'low_credits',
         agent,
@@ -302,14 +381,7 @@ export async function auditPerformance() {
       }));
     }
 
-    // 4. Cohérence config → mutation directe via Phagocyte (zéro ticket, action immédiate)
-    const configActions = auditConfigCoherence();
-    for (const action of configActions) {
-      console.info(`[Coeus] ✅ Config mutation dispatched: ${action.key} ${action.from}→${action.to}`);
-    }
-
     // 3. Heuristiques faibles (uniquement si >= 3 pour éviter le bruit)
-    const weakH = auditWeakHeuristics();
     if (weakH.length >= 3) {
       tickets.push(createMutationTicket({
         type:        'weak_heuristics',
@@ -318,6 +390,25 @@ export async function auditPerformance() {
         suggestion:  `Dream cycle is generating low-confidence heuristics. Increase episode batch size, filter noisy episodes before extraction, or raise the minimum episode count per heuristic.`,
         target_file: 'scripts/dream_cycle.py',
       }));
+    }
+
+    // 4. Cohérence config → mutation directe via Phagocyte (zéro ticket, action immédiate)
+    // Séparée du Promise.all car elle écrit sur ChimeraBus — séquentialité voulue
+    const configActions = await auditConfigCoherence();
+
+    // 5. Patterns de code dangereux → tickets de mutation
+    const codeIssues = await auditCodePatterns();
+    for (const issue of codeIssues) {
+      tickets.push(createMutationTicket({
+        type:        issue.type,
+        component:   issue.component,
+        evidence:    issue.evidence,
+        suggestion:  issue.suggestion,
+        target_file: issue.target_file,
+      }));
+    }
+    for (const action of configActions) {
+      console.info(`[Coeus] ✅ Config mutation dispatched: ${action.key} ${action.from}→${action.to}`);
     }
 
     _lastAuditTs = new Date().toISOString();

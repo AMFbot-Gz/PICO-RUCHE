@@ -8,6 +8,7 @@ import json
 import asyncio
 import httpx
 import unicodedata
+import re
 from datetime import datetime
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
@@ -26,9 +27,18 @@ with open(ROOT / "agent_config.yml") as f:
 
 app = FastAPI(title="PICO-RUCHE Executor", version="1.0.0")
 
-BLOCKED = CONFIG["security"]["blocked_shell_patterns"]
-SHELL_TIMEOUT = min(int(CONFIG["security"]["max_shell_timeout"]), 30)   # max 30s
+BLOCKED_RAW = CONFIG["security"]["blocked_shell_patterns"]
+SHELL_TIMEOUT = min(int(CONFIG["security"]["max_shell_timeout"]), 30)
 REQUIRE_CONFIRM = CONFIG["security"]["require_confirmation_for"]
+
+# Patterns regex compilés — plus robustes que le substring matching
+_BLOCKED_PATTERNS = [
+    re.compile(r'rm\s+-[a-z]*r[a-z]*f?\s+/', re.IGNORECASE),   # rm -rf / et variantes
+    re.compile(r':\s*\(\s*\)\s*\{.*\|.*\}', re.DOTALL),         # fork bomb
+    re.compile(r'dd\s+if=/dev/zero', re.IGNORECASE),
+    re.compile(r'\bmkfs\b', re.IGNORECASE),
+    re.compile(r'\b(shutdown|reboot|poweroff|halt)\b', re.IGNORECASE),
+]
 OUTPUT_MAX_CHARS = 10_000   # troncature sortie commande
 
 pyautogui.FAILSAFE = True
@@ -36,6 +46,7 @@ pyautogui.PAUSE = 0.3
 
 # Thread pool dédié aux appels PyAutoGUI (bloquants — à ne pas exécuter dans l'event loop)
 _gui_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="pyautogui")
+_gui_lock = asyncio.Lock()  # sérialise les appels GUI pour éviter les race conditions
 
 
 def _type_text_safe(text: str, interval: float = 0.05):
@@ -53,16 +64,18 @@ def _type_text_safe(text: str, interval: float = 0.05):
 
 
 async def _gui(fn, *args, **kwargs):
-    """Exécute un appel PyAutoGUI dans un thread dédié pour ne pas bloquer l'event loop."""
-    loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(_gui_executor, lambda: fn(*args, **kwargs))
+    """Sérialise les appels PyAutoGUI : asyncio.Lock + thread dédié."""
+    async with _gui_lock:
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(_gui_executor, lambda: fn(*args, **kwargs))
 
 
 # ─── Sécurité shell ────────────────────────────────────────────────────────────
 
 def is_blocked(cmd: str) -> bool:
-    """Vérifie si la commande contient un pattern bloqué par la config de sécurité."""
-    return any(p in cmd for p in BLOCKED)
+    """Vérifie si la commande contient un pattern dangereux (regex, résistant aux variantes)."""
+    normalized = ' '.join(cmd.split())  # normalise les espaces multiples
+    return any(p.search(normalized) for p in _BLOCKED_PATTERNS)
 
 
 def needs_confirm(cmd: str) -> bool:
@@ -278,7 +291,7 @@ async def health():
         "layer": "executor",
         "failsafe": pyautogui.FAILSAFE,
         "shell_timeout": SHELL_TIMEOUT,
-        "blocked_patterns": len(BLOCKED),
+        "blocked_patterns": len(_BLOCKED_PATTERNS),
     }
 
 

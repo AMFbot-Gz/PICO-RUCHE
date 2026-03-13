@@ -64,19 +64,20 @@ def _read_episodes_safe(filepath: Path) -> list:
     return episodes
 
 
-async def _trim_episodes_if_needed(filepath: Path, max_ep: int):
-    """Troncature asynchrone — uniquement si trop grand (>1MB)."""
+async def _trim_episodes_if_needed(filepath: Path, max_ep: int) -> None:
+    """Tronque le fichier JSONL aux max_ep épisodes les plus récents."""
     try:
-        if not filepath.exists() or filepath.stat().st_size < 1_000_000:
+        if not filepath.exists():
             return
-        episodes = _read_episodes_safe(filepath)
-        if len(episodes) > max_ep:
-            with open(filepath, "w", encoding="utf-8") as f:
-                for ep in episodes[-max_ep:]:
-                    f.write(json.dumps(ep, ensure_ascii=False) + "\n")
-            print(f"[Memory] Troncature: {len(episodes)} → {max_ep} épisodes")
+        lines = [l for l in filepath.read_text(encoding="utf-8").splitlines() if l.strip()]
+        if len(lines) <= max_ep:
+            return
+        # Garde uniquement les max_ep derniers épisodes
+        kept = lines[-max_ep:]
+        filepath.write_text("\n".join(kept) + "\n", encoding="utf-8")
+        print(f"[Memory] 🗑️  Trim épisodes: {len(lines)} → {len(kept)}")
     except Exception as e:
-        print(f"[Memory] Trim error: {e}")
+        print(f"[Memory] ⚠️  Trim error: {e}")
 
 
 @app.post("/episode")
@@ -87,7 +88,7 @@ async def save_episode(episode: Episode):
     }
     with open(EPISODE_FILE, "a", encoding="utf-8") as f:
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-    # Troncature en tâche background — non bloquante, uniquement si >1MB
+    # Troncature en tâche background — non bloquante
     asyncio.create_task(_trim_episodes_if_needed(EPISODE_FILE, MAX_EPISODES))
     if episode.learned:
         with open(PERSISTENT_FILE, "a", encoding="utf-8") as f:

@@ -29,6 +29,14 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { createHmac } from 'crypto';
+
+const CHIMERA_SECRET = process.env.CHIMERA_SECRET || 'pico-ruche-dev-secret';
+
+function _signCommand(cmd) {
+  const payload = `${cmd.id}|${cmd.action}|${cmd.target}|${cmd.key}|${cmd.new_value}`;
+  return createHmac('sha256', CHIMERA_SECRET).update(payload).digest('hex');
+}
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT      = join(__dirname, '..');
@@ -55,7 +63,7 @@ function ensureMutationsDir() {
  * Coeus appelle writeCommand() pour envoyer une mutation au Phagocyte.
  * Écrit simultanément dans le SAB (intra-processus) ET dans le fichier (cross-process).
  */
-export function writeCommand({ action, target, key, old_value, new_value }) {
+export function writeCommand({ action, target, key, old_value, new_value, find, replace, after, line }) {
   ensureMutationsDir();
   _cmdCounter++;
 
@@ -63,14 +71,20 @@ export function writeCommand({ action, target, key, old_value, new_value }) {
     id:          `chim-${Date.now()}-${_cmdCounter}`,
     action,
     target,
-    key,
-    old_value,
-    new_value,
+    ...(key       !== undefined && { key }),
+    ...(old_value !== undefined && { old_value }),
+    ...(new_value !== undefined && { new_value }),
+    ...(find      !== undefined && { find }),
+    ...(replace   !== undefined && { replace }),
+    ...(after     !== undefined && { after }),
+    ...(line      !== undefined && { line }),
     status:      'pending',
     created_by:  'coeus',
     created_at:  new Date().toISOString(),
     executed_at: null,
   };
+
+  cmd.signature = _signCommand(cmd);
 
   const json    = JSON.stringify(cmd);
   const encoded = new TextEncoder().encode(json);

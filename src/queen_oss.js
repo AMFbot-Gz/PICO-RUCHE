@@ -34,11 +34,6 @@ try {
   // swarm optionnel — ignoré silencieusement si indisponible
 }
 
-// ─── Mode Autonome Total : HITL auto-approve en standalone ────────────────────
-if (!process.env.HITL_AUTO_APPROVE) {
-  process.env.HITL_AUTO_APPROVE = 'true';  // exécution directe, zéro blocage HITL
-}
-
 // ─── Chemins et Constantes ─────────────────────────────────────────────────────────────────
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, "..");

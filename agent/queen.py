@@ -12,9 +12,15 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from collections import defaultdict
+import time as _time
+from fastapi import FastAPI, Request
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
+
+_rate_store: dict = defaultdict(lambda: {"count": 0, "reset_at": 0.0})
+_RATE_MAX   = 20   # requêtes max
+_RATE_WIN   = 60   # fenêtre en secondes
 import yaml
 from dotenv import load_dotenv
 load_dotenv()
@@ -106,7 +112,11 @@ async def save_mission(mission_id: str, input_text: str, status: str,
                        plan: dict = None, result: str = None,
                        provider: str = None, duration_ms: int = None):
     """Sauvegarde thread-safe via DB_LOCK + run_in_executor (fix #4)."""
-    async with DB_LOCK:
+    lock = DB_LOCK
+    if lock is None:
+        # lifespan pas encore complet — skip silencieux (démarrage)
+        return
+    async with lock:
         await asyncio.get_event_loop().run_in_executor(
             None, _save_mission_sync,
             mission_id, input_text, status, plan, result, provider, duration_ms
@@ -598,6 +608,21 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="PICO-RUCHE Queen", version="1.0.0", lifespan=lifespan)
 
 
+@app.middleware("http")
+async def _rate_limit(request: Request, call_next):
+    if request.url.path == "/mission" and request.method == "POST":
+        ip  = (request.client.host if request.client else None) or "unknown"
+        now = _time.monotonic()
+        e   = _rate_store[ip]
+        if now > e["reset_at"]:
+            e["count"], e["reset_at"] = 0, now + _RATE_WIN
+        e["count"] += 1
+        if e["count"] > _RATE_MAX:
+            from fastapi.responses import JSONResponse
+            return JSONResponse({"error": "Rate limit dépassé (20 req/min)"}, status_code=429)
+    return await call_next(request)
+
+
 # ─── Modèles Pydantic ──────────────────────────────────────────────────────────
 
 class MissionRequest(BaseModel):
@@ -653,11 +678,12 @@ async def status():
     if _WORLD_MODEL_AVAILABLE:
         try:
             wm = WorldModel.get_instance()
-            world_model_info = {
-                "active_app": wm.get_frontmost_app(),
-                "cpu_high": wm.is_cpu_high(),
-                "disk_low": wm.is_disk_space_low(),
-            }
+            if wm is not None:
+                world_model_info = {
+                    "active_app": wm.get_frontmost_app(),
+                    "cpu_high": wm.is_cpu_high(),
+                    "disk_low": wm.is_disk_space_low(),
+                }
         except Exception:
             pass
     return {
@@ -716,11 +742,12 @@ async def health():
     if _WORLD_MODEL_AVAILABLE:
         try:
             wm = WorldModel.get_instance()
-            world_model_info = {
-                "active_app": wm.get_frontmost_app(),
-                "cpu_high": wm.is_cpu_high(),
-                "disk_low": wm.is_disk_space_low(),
-            }
+            if wm is not None:
+                world_model_info = {
+                    "active_app": wm.get_frontmost_app(),
+                    "cpu_high": wm.is_cpu_high(),
+                    "disk_low": wm.is_disk_space_low(),
+                }
         except Exception:
             pass
     return {

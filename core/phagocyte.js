@@ -31,6 +31,16 @@ import { readFile, writeFile }          from 'fs/promises';
 import { dirname, join, resolve }       from 'path';
 import { fileURLToPath }                from 'url';
 import { readCommand, markExecuted }    from './chimera_bus.js';
+import { createHmac } from 'crypto';
+
+const CHIMERA_SECRET = process.env.CHIMERA_SECRET || 'pico-ruche-dev-secret';
+
+function _verifyCommand(cmd) {
+  if (!cmd.signature) return false;
+  const payload = `${cmd.id}|${cmd.action}|${cmd.target}|${cmd.key}|${cmd.new_value}`;
+  const expected = createHmac('sha256', CHIMERA_SECRET).update(payload).digest('hex');
+  return cmd.signature === expected;
+}
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT      = resolve(__dirname, '..');
@@ -98,10 +108,10 @@ function startTelemetry() {
 // Le fichier source sur disque est modifié — le code en RAM reste inchangé.
 
 async function applyMutation(cmd) {
-  const { id, target, key, old_value, new_value } = cmd;
+  const { id, action, target, key, old_value, new_value } = cmd;
   const filePath = resolve(ROOT, target);
 
-  console.log(`[Phagocyte] 🔬 Mutation reçue : ${target} → ${key}: ${old_value} → ${new_value}`);
+  console.log(`[Phagocyte] 🔬 Mutation reçue : action=${action} target=${target}`);
 
   let content;
   try {
@@ -112,18 +122,65 @@ async function applyMutation(cmd) {
     return false;
   }
 
-  // Pattern: "key: old_value" → "key: new_value" (commentaire trailing préservé)
-  const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const pattern    = new RegExp(`^(\\s*${escapedKey}\\s*:\\s*)${old_value}(\\s*(#.*)?)$`, 'm');
+  let patched;
 
-  if (!pattern.test(content)) {
-    console.warn(`[Phagocyte] ⚠️  Clé introuvable ou valeur déjà correcte: ${key}=${old_value}`);
-    markExecuted(id, false, 'key not found or value already correct');
+  if (action === 'mutate') {
+    // ─── YAML value patch (comportement existant) ─────────────────────────
+    const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const pattern = new RegExp(`^(\\s*${escapedKey}\\s*:\\s*)${old_value}(\\s*(#.*)?)$`, 'm');
+    if (!pattern.test(content)) {
+      console.warn(`[Phagocyte] ⚠️  Clé introuvable ou valeur déjà correcte: ${key}=${old_value}`);
+      markExecuted(id, false, 'key not found or value already correct');
+      return false;
+    }
+    patched = content.replace(pattern, `$1${new_value}$2`);
+
+  } else if (action === 'patch_code') {
+    // ─── Remplacement de bloc de code (Python ou JS) ──────────────────────
+    // cmd.find    = string exact à trouver (peut être multiligne)
+    // cmd.replace = string de remplacement
+    if (!cmd.find || cmd.replace === undefined) {
+      markExecuted(id, false, 'patch_code requires find and replace fields');
+      return false;
+    }
+    if (!content.includes(cmd.find)) {
+      console.warn(`[Phagocyte] ⚠️  Bloc introuvable dans ${target}`);
+      markExecuted(id, false, 'block not found');
+      return false;
+    }
+    patched = content.replace(cmd.find, cmd.replace);
+
+  } else if (action === 'inject_line') {
+    // ─── Injection d'une ligne après un marqueur ──────────────────────────
+    // cmd.after   = marqueur ligne (string exact)
+    // cmd.line    = ligne à injecter après
+    if (!cmd.after || !cmd.line) {
+      markExecuted(id, false, 'inject_line requires after and line fields');
+      return false;
+    }
+    const lines = content.split('\n');
+    const idx = lines.findIndex(l => l.includes(cmd.after));
+    if (idx === -1) {
+      console.warn(`[Phagocyte] ⚠️  Marqueur introuvable: ${cmd.after}`);
+      markExecuted(id, false, 'marker not found');
+      return false;
+    }
+    // Injecte seulement si la ligne suivante ne contient pas déjà le contenu (idempotence)
+    if (idx + 1 < lines.length && lines[idx + 1].includes(cmd.line.trim())) {
+      console.info(`[Phagocyte] ℹ️  Ligne déjà présente — skip (idempotent)`);
+      markExecuted(id, true);
+      return true;
+    }
+    lines.splice(idx + 1, 0, cmd.line);
+    patched = lines.join('\n');
+
+  } else {
+    console.warn(`[Phagocyte] Action inconnue: ${action}`);
+    markExecuted(id, false, 'unknown action');
     return false;
   }
 
-  const patched = content.replace(pattern, `$1${new_value}$2`);
-
+  // ─── Écriture du fichier patché ──────────────────────────────────────────
   try {
     await writeFile(filePath, patched, 'utf-8');
   } catch (err) {
@@ -136,10 +193,12 @@ async function applyMutation(cmd) {
 
   console.log('');
   console.log('┌─────────────────────────────────────────────────────┐');
-  console.log(`│  🔬 MUTATION APPLIQUÉE                              │`);
+  console.log(`│  🔬 MUTATION APPLIQUÉE (${action.padEnd(28)})  │`);
   console.log(`│  Fichier : ${target.padEnd(41)} │`);
-  console.log(`│  Clé     : ${key.padEnd(41)} │`);
-  console.log(`│  ${String(old_value).padStart(5)} → ${String(new_value).padEnd(35)} │`);
+  if (action === 'mutate') {
+    console.log(`│  Clé     : ${key.padEnd(41)} │`);
+    console.log(`│  ${String(old_value).padStart(5)} → ${String(new_value).padEnd(35)} │`);
+  }
   console.log(`│  Commande: ${id.padEnd(41)} │`);
   console.log('└─────────────────────────────────────────────────────┘');
   console.log('');
@@ -156,14 +215,18 @@ const mutationPoll = setInterval(async () => {
 
   // Déduplique (évite de rejouer la même commande si markExecuted n'a pas encore écrit)
   if (cmd.id === _lastCmdId) return;
+
+  // Vérification HMAC — rejette toute commande non signée ou falsifiée
+  if (!_verifyCommand(cmd)) {
+    console.error(`[Phagocyte] 🚫 REJET signature invalide — cmd_id=${cmd.id}`);
+    markExecuted(cmd.id, false, 'invalid signature');
+    _lastCmdId = cmd.id;
+    return;
+  }
+
   _lastCmdId = cmd.id;
 
-  if (cmd.action === 'mutate') {
-    await applyMutation(cmd);
-  } else {
-    console.warn(`[Phagocyte] Action inconnue: ${cmd.action}`);
-    markExecuted(cmd.id, false, 'unknown action');
-  }
+  await applyMutation(cmd);
 }, 100);  // 10Hz
 
 console.log('[Phagocyte] 🦠 Mutation Arm actif — polling ChimeraBus @ 10Hz');

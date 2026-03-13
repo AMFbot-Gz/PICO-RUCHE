@@ -129,6 +129,16 @@ export function startStandaloneServer(deps) {
 
   startCoeusLoop();
 
+  // ─── Voice continue (optionnel — activer avec VOICE_ENABLED=true) ─────────────
+  if (process.env.VOICE_ENABLED === 'true') {
+    import('../voice_continuous.js')
+      .then(({ startVoiceContinuous }) => {
+        startVoiceContinuous();
+        console.info('[Standalone] 🎤 Voice continue activée');
+      })
+      .catch(err => console.warn(`[Standalone] Voice désactivée: ${err.message}`));
+  }
+
   return { app, server };
 }
 

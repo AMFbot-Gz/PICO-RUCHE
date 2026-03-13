@@ -45,7 +45,13 @@ export function storeEpisode({ mission, context = {}, actions = [], observations
     appendFileSync(EPISODES_FILE, JSON.stringify(episode) + '\n', 'utf8');
     const episodes = loadEpisodes();
     episodes.push(episode);
-    if (episodes.length > MAX_EPISODES) episodes.splice(0, episodes.length - MAX_EPISODES);
+    if (episodes.length > MAX_EPISODES) {
+      episodes.splice(0, episodes.length - MAX_EPISODES);
+      // Réécriture fichier pour refléter le trim
+      try {
+        writeFileSync(EPISODES_FILE, episodes.map(e => JSON.stringify(e)).join('\n') + '\n', 'utf8');
+      } catch (_) {}
+    }
   } catch {}
 
   return episode;

@@ -12,6 +12,8 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { existsSync } from 'fs';
 import { initAgent, deductCredits, CREDIT_PER_SKILL } from '../market/creditSystem.js';
+import { estimateRisk } from '../simulation/riskEstimator.js';
+import { logger } from '../utils/logger.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '../..');
@@ -229,6 +231,18 @@ export async function executeSequence(steps, { hudFn, stopOnError = false } = {}
   for (let i = 0; i < steps.length; i++) {
     const step = steps[i];
     hudFn?.({ type: 'thinking', agent: 'Executor', thought: `${i+1}/${steps.length}: ${step.skill}` });
+
+    // ─── Guard HITL : bloque les actions HIGH-risk si HITL_AUTO_APPROVE != 'true' ─
+    const autoApprove = process.env.HITL_AUTO_APPROVE === 'true';
+    const riskAssessment = estimateRisk(step.skill, step.params || {});
+    if (riskAssessment.level === 'high' && !autoApprove) {
+      logger.warn(`[Queen] Action HIGH-risk bloquée — HITL requis: ${step.skill}`);
+      const blockedResult = { success: false, reason: 'hitl_required', step };
+      results.push({ step, ...blockedResult });
+      if (stopOnError) break;
+      if (i < steps.length - 1) await new Promise(r => setTimeout(r, 300));
+      continue;
+    }
 
     const result = await executeStep(step, { hudFn });
     results.push({ step, ...result });

@@ -1,7 +1,7 @@
 """
 Couche cerveau — port 8003
 Claude API · MLX · Ollama · routing modèles · compression contexte · planification
-Chaîne de fallback : Claude (claude-opus-4-6) → MLX → Ollama → Kimi
+Chaîne de fallback : Claude (claude-opus-4-6) → MLX → Ollama → Kimi → OpenAI
 """
 import asyncio
 import httpx
@@ -110,11 +110,34 @@ async def call_kimi(messages: list, system: str = "") -> str:
         return r.json()["choices"][0]["message"]["content"]
 
 
+async def call_openai(messages: list, system: str = "") -> str:
+    """Fallback OpenAI — gpt-4o-mini par défaut."""
+    key = os.environ.get("OPENAI_API_KEY", "").strip()
+    if not key:
+        raise ValueError("OPENAI_API_KEY absent dans .env")
+    try:
+        import openai
+    except ImportError:
+        raise RuntimeError("openai non installé — pip install openai")
+    client = openai.AsyncOpenAI(api_key=key)
+    msgs = []
+    if system:
+        msgs.append({"role": "system", "content": system})
+    msgs.extend(messages)
+    response = await client.chat.completions.create(
+        model=os.environ.get("OPENAI_MODEL", "gpt-4o-mini"),
+        messages=msgs,
+        max_tokens=2000,
+        timeout=60,
+    )
+    return response.choices[0].message.content or ""
+
+
 async def llm(role: str, messages: list, system: str = "") -> dict:
     """
     Routing LLM avec chaîne de fallback :
-    strategist → Claude (claude-opus-4-6) → MLX → Ollama → Kimi
-    autres rôles → Ollama → Kimi
+    strategist → Claude (claude-opus-4-6) → MLX → Ollama → Kimi → OpenAI
+    autres rôles → Ollama → Kimi → OpenAI
     """
     model = MODELS.get(role, MODELS["worker"])
 
@@ -135,19 +158,33 @@ async def llm(role: str, messages: list, system: str = "") -> dict:
             print(f"[Brain] MLX failed: {e} → Ollama")
 
     # 3. Ollama — LLM local par défaut
+    last_error = ""
     try:
         content = await call_ollama(model, messages, system)
         return {"content": content, "provider": "ollama", "model": model}
     except Exception as e:
+        last_error = f"Ollama: {e}"
         print(f"[Brain] Ollama failed: {e}")
-        # 4. Kimi — cloud uniquement si la clé est présente
-        if os.environ.get("KIMI_API_KEY"):
-            try:
-                content = await call_kimi(messages, system)
-                return {"content": content, "provider": "kimi", "model": "moonshot-v1-8k"}
-            except Exception as e2:
-                raise RuntimeError(f"Tous les providers ont échoué (Ollama + Kimi): {e2}")
-        raise RuntimeError(f"Ollama failed (aucun fallback cloud disponible): {e}")
+
+    # 4. Kimi — cloud uniquement si la clé est présente
+    if os.environ.get("KIMI_API_KEY"):
+        try:
+            content = await call_kimi(messages, system)
+            return {"content": content, "provider": "kimi", "model": "moonshot-v1-8k"}
+        except Exception as e_kimi:
+            last_error = f"Kimi: {e_kimi}"
+            print(f"[Brain] Kimi failed: {e_kimi}")
+
+    # 5. OpenAI — fallback cloud secondaire
+    if os.environ.get("OPENAI_API_KEY"):
+        try:
+            content = await call_openai(messages, system)
+            return {"content": content, "provider": "openai", "model": os.environ.get("OPENAI_MODEL", "gpt-4o-mini")}
+        except Exception as e_openai:
+            last_error = f"OpenAI: {e_openai}"
+            print(f"[Brain] OpenAI failed: {e_openai}")
+
+    raise RuntimeError(f"Tous les providers LLM ont échoué. Dernier: {last_error}")
 
 
 async def compress_context(messages: list) -> str:
