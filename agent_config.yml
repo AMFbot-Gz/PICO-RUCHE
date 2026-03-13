@@ -1,0 +1,82 @@
+# PICO-RUCHE Agent — Configuration centrale
+version: "1.0.0"
+hardware: "Mac M2 16GB"
+
+ports:
+  queen: 8001
+  perception: 8002
+  brain: 8003
+  executor: 8004
+  evolution: 8005
+  memory: 8006
+  mcp_bridge: 8007
+
+ollama:
+  base_url: "http://localhost:11434"
+  models:
+    strategist: "llama3:latest"
+    worker: "llama3.2:3b"
+    vision: "moondream:latest"
+    compressor: "llama3.2:3b"
+  timeout: 60
+
+mlx:
+  enabled: false
+  model_path: "./mlx-models/qwen3-7b"
+  server_url: "http://127.0.0.1:8080/v1"
+  fallback_to_ollama: true
+
+perception:
+  interval_seconds: 30
+  screenshot_enabled: true
+  system_scan_enabled: true
+  change_threshold: 0.05
+
+brain:
+  max_context_tokens: 8000
+  compress_threshold: 6000
+  max_subtasks: 5
+  risk_levels: ["low", "medium", "high"]
+  auto_act_on: ["low"]
+  hitl_required_on: ["high"]
+
+memory:
+  max_episodes: 500
+  episode_file: "agent/memory/episodes.jsonl"
+  persistent_file: "agent/memory/persistent.md"
+  world_state_file: "agent/memory/world_state.json"
+
+mcp:
+  node_base_url: "http://localhost:3000"
+  timeout: 30
+  tools:
+    - name: "os-control"
+      endpoint: "/mcp/os-control"
+    - name: "terminal"
+      endpoint: "/mcp/terminal"
+    - name: "vision"
+      endpoint: "/mcp/vision"
+    - name: "vault"
+      endpoint: "/mcp/vault"
+    - name: "rollback"
+      endpoint: "/mcp/rollback"
+    - name: "skill-factory"
+      endpoint: "/mcp/skill-factory"
+    - name: "janitor"
+      endpoint: "/mcp/janitor"
+
+security:
+  hitl_mode: "relay"
+  blocked_shell_patterns:
+    - "rm -rf /"
+    - ":(){ :|:& };:"
+    - "dd if=/dev/zero"
+    - "mkfs"
+    - "shutdown"
+    - "reboot"
+  max_shell_timeout: 30
+  require_confirmation_for: ["delete", "format", "kill", "shutdown"]
+
+telegram:
+  enabled: true
+  hitl_timeout_seconds: 120

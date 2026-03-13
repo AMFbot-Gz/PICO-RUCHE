@@ -27,7 +27,11 @@
     "standalone": "STANDALONE_MODE=true node src/queen_oss.js",
     "phase-check": "bash scripts/phase_check.sh",
     "install-mlx": "bash scripts/install_mlx.sh",
-    "doctor": "bash scripts/phase_check.sh"
+    "doctor": "bash scripts/phase_check.sh",
+    "agent:start": "python3 start_agent.py",
+    "agent:stop": "python3 stop_agent.py",
+    "agent:status": "curl -s http://localhost:8001/status | python3 -m json.tool",
+    "agent:mission": "curl -s -X POST http://localhost:8001/mission -H 'Content-Type: application/json' -d"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
