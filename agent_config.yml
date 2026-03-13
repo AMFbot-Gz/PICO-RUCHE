@@ -18,7 +18,7 @@ ollama:
     worker: "llama3.2:3b"
     vision: "moondream:latest"
     compressor: "llama3.2:3b"
-  timeout: 60
+  timeout: 120
 
 mlx:
   enabled: false

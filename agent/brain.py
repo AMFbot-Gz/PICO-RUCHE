@@ -44,7 +44,7 @@ async def call_ollama(model: str, messages: list, system: str = "") -> str:
     payload = {"model": model, "messages": messages, "stream": False}
     if system:
         payload["messages"] = [{"role": "system", "content": system}] + messages
-    async with httpx.AsyncClient(timeout=CONFIG["ollama"]["timeout"]) as client:
+    async with httpx.AsyncClient(timeout=120) as client:
         r = await client.post(f"{OLLAMA_URL}/api/chat", json=payload)
         r.raise_for_status()
         return r.json()["message"]["content"]
