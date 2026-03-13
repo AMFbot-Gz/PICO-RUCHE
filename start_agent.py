@@ -20,6 +20,12 @@ except ImportError:
     )
     import httpx
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).resolve().parent / ".env")
+except ImportError:
+    pass
+
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
