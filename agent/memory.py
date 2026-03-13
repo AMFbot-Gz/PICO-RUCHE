@@ -48,7 +48,7 @@ class WorldStateUpdate(BaseModel):
 async def save_episode(episode: Episode):
     entry = {
         "timestamp": datetime.utcnow().isoformat(),
-        **episode.dict()
+        **episode.model_dump()
     }
     with open(EPISODE_FILE, "a") as f:
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
@@ -108,7 +108,21 @@ async def get_profile():
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "layer": "memory"}
+    episode_count = 0
+    try:
+        if EPISODE_FILE.exists():
+            lines = [l for l in EPISODE_FILE.read_text().strip().split("\n") if l]
+            episode_count = len(lines)
+    except Exception:
+        pass
+    return {
+        "status": "ok",
+        "layer": "memory",
+        "episode_count": episode_count,
+        "max_episodes": MAX_EPISODES,
+        "episode_file": str(EPISODE_FILE),
+        "world_state_file": str(WORLD_STATE_FILE),
+    }
 
 
 if __name__ == "__main__":

@@ -59,18 +59,27 @@ async def repair_file(file_path: str, error: str) -> dict:
 
 async def run_tests() -> dict:
     try:
-        result = subprocess.run(
-            ["npm", "test"], capture_output=True, text=True, timeout=120, cwd="."
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None,
+            lambda: subprocess.run(
+                ["npm", "test"], capture_output=True, text=True, timeout=120, cwd="."
+            )
         )
         output = result.stdout + result.stderr
-        passed = output.count("passing") or output.count("✓")
-        failed = output.count("failing") or output.count("✗")
+        # Comptage additionné (pas de court-circuit logique avec 'or')
+        passed = output.count("passing") + output.count("✓")
+        failed = output.count("failing") + output.count("✗")
         return {
             "success": result.returncode == 0,
             "output": output[-2000:],
             "passed": passed,
             "failed": failed
         }
+    except subprocess.TimeoutExpired:
+        return {"success": False, "error": "Timeout 120s dépassé pour npm test"}
+    except FileNotFoundError:
+        return {"success": False, "error": "npm non trouvé — tests non disponibles"}
     except Exception as e:
         return {"success": False, "error": str(e)}
 
