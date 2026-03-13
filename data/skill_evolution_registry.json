@@ -798,5 +798,85 @@
     "lastUsed": "2026-03-13T01:54:24.454Z",
     "lastImproved": "2026-03-13T01:54:24.455Z",
     "successRate": 1
+  },
+  "test_skill_track_1773366892762": {
+    "skill": "test_skill_track_1773366892762",
+    "version": 1,
+    "usageCount": 1,
+    "successCount": 1,
+    "avgLatencyMs": 100,
+    "lastUsed": "2026-03-13T01:54:52.763Z",
+    "lastImproved": null,
+    "successRate": 1
+  },
+  "test_skill_mixed_1773366892765": {
+    "skill": "test_skill_mixed_1773366892765",
+    "version": 1,
+    "usageCount": 4,
+    "successCount": 2,
+    "avgLatencyMs": 108,
+    "lastUsed": "2026-03-13T01:54:52.765Z",
+    "lastImproved": null,
+    "successRate": 0.5
+  },
+  "test_skill_improve_1773366892781": {
+    "skill": "test_skill_improve_1773366892781",
+    "version": 1,
+    "usageCount": 10,
+    "successCount": 2,
+    "avgLatencyMs": 228,
+    "lastUsed": "2026-03-13T01:54:52.781Z",
+    "lastImproved": null,
+    "successRate": 0.2
+  },
+  "test_skill_bump_1773366892782": {
+    "skill": "test_skill_bump_1773366892782",
+    "version": 2,
+    "usageCount": 1,
+    "successCount": 1,
+    "avgLatencyMs": 100,
+    "lastUsed": "2026-03-13T01:54:52.782Z",
+    "lastImproved": "2026-03-13T01:54:52.782Z",
+    "successRate": 1
+  },
+  "test_skill_track_1773367137098": {
+    "skill": "test_skill_track_1773367137098",
+    "version": 1,
+    "usageCount": 1,
+    "successCount": 1,
+    "avgLatencyMs": 100,
+    "lastUsed": "2026-03-13T01:58:57.100Z",
+    "lastImproved": null,
+    "successRate": 1
+  },
+  "test_skill_mixed_1773367137102": {
+    "skill": "test_skill_mixed_1773367137102",
+    "version": 1,
+    "usageCount": 4,
+    "successCount": 2,
+    "avgLatencyMs": 108,
+    "lastUsed": "2026-03-13T01:58:57.102Z",
+    "lastImproved": null,
+    "successRate": 0.5
+  },
+  "test_skill_improve_1773367137103": {
+    "skill": "test_skill_improve_1773367137103",
+    "version": 1,
+    "usageCount": 10,
+    "successCount": 2,
+    "avgLatencyMs": 228,
+    "lastUsed": "2026-03-13T01:58:57.103Z",
+    "lastImproved": null,
+    "successRate": 0.2
+  },
+  "test_skill_bump_1773367137104": {
+    "skill": "test_skill_bump_1773367137104",
+    "version": 2,
+    "usageCount": 1,
+    "successCount": 1,
+    "avgLatencyMs": 100,
+    "lastUsed": "2026-03-13T01:58:57.104Z",
+    "lastImproved": "2026-03-13T01:58:57.104Z",
+    "successRate": 1
   }
 }
