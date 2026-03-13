@@ -15,6 +15,40 @@
 const step  = (skill, params = {}, desc = '') => ({ skill, params, description: desc || skill });
 const steps = (...s) => s;
 
+// ─── Sécurité : blocklist pour run_command ─────────────────────────────────
+// Commandes destructrices bloquées — toujours passer par execSafe côté MCP
+const SHELL_BLOCKLIST = [
+  /rm\s+-rf?\s+\//,           // rm -rf /
+  /:\(\)\{.*\|.*&\}/,         // fork bomb
+  /dd\s+if=\/dev\/zero/,      // dd zero wipe
+  /mkfs\./,                   // formater un disque
+  /shutdown/i,                // arrêt système
+  /reboot/i,                  // redémarrage
+  /halt\b/,                   // arrêt
+  />\s*\/dev\/s[d-z]/,        // écriture disque brut
+  /sudo\s+rm\s+-rf/,          // rm -rf via sudo
+  /curl.+\|\s*(?:sh|bash)/,   // curl | bash (injection)
+  /wget.+\|\s*(?:sh|bash)/,   // wget | bash
+];
+
+function sanitizeCommand(cmd) {
+  for (const pattern of SHELL_BLOCKLIST) {
+    if (pattern.test(cmd)) {
+      return { blocked: true, reason: `Commande bloquée (pattern dangereux): ${cmd.slice(0, 60)}` };
+    }
+  }
+  return { blocked: false };
+}
+
+function safeRunCommand(command) {
+  const check = sanitizeCommand(command);
+  if (check.blocked) {
+    console.warn(`[intentRouter] BLOCKED: ${check.reason}`);
+    return steps(step('run_command', { command: 'echo "Commande bloquée pour raison de sécurité"' }, 'Bloqué'));
+  }
+  return steps(step('run_command', { command }, `Shell: ${command}`));
+}
+
 // Normalise une app : "vscode" → "Visual Studio Code", "safari" → "Safari", etc.
 function normalizeApp(raw = '') {
   const map = {
@@ -123,7 +157,7 @@ const RULES = [
   // ── Exécuter commande shell ────────────────────────────────────────────────
   {
     test: /(?:exécute?|lance?|run|fais?\s+un\s+|tape?\s+dans\s+(?:le\s+)?terminal)\s+(?:la\s+commande?\s+)?["`'"]?([^"`'"]{3,})["`'"]?/i,
-    build: (m) => steps(step('run_command', { command: m[1].trim() }, `Shell: ${m[1]}`)),
+    build: (m) => safeRunCommand(m[1].trim()),
   },
 
   // ── Lister fichiers ────────────────────────────────────────────────────────
@@ -139,7 +173,8 @@ const RULES = [
     test: /(?:liste?|list|ls)\s+(?:les\s+)?fichiers?(?:\s+du\s+(?:projet|dossier|répertoire))?/i,
     build: (m, text) => {
       const dirMatch = text.match(/(?:dans?|du\s+dossier|of)\s+([^\s]+)/i);
-      return steps(step('run_command', { command: `ls -la ${dirMatch ? dirMatch[1] : '.'}` }, 'Lister fichiers'));
+      const dir = dirMatch ? dirMatch[1].replace(/[^a-zA-Z0-9_.\/\-]/g, '') : '.';
+      return steps(step('run_command', { command: `ls -la ${dir}` }, 'Lister fichiers'));
     },
   },
 

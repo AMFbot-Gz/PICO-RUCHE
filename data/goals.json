@@ -1,15 +1,43 @@
 [
   {
-    "id": "g-1773359212698-y3pz",
-    "description": "Tester la production",
-    "priority": 8,
+    "id": "g-1773372368457-zljq",
+    "description": "Dep",
+    "priority": 5,
     "deadline": null,
     "dependencies": [],
     "subgoals": [],
     "status": "pending",
     "reward": 1,
-    "createdAt": "2026-03-12T23:46:52.698Z",
-    "updatedAt": "2026-03-12T23:46:52.698Z",
+    "createdAt": "2026-03-13T03:26:08.457Z",
+    "updatedAt": "2026-03-13T03:26:08.457Z",
+    "completedAt": null
+  },
+  {
+    "id": "g-1773372368457-bxmi",
+    "description": "Bloqué",
+    "priority": 5,
+    "deadline": null,
+    "dependencies": [
+      "g-1773372368457-zljq"
+    ],
+    "subgoals": [],
+    "status": "pending",
+    "reward": 1,
+    "createdAt": "2026-03-13T03:26:08.457Z",
+    "updatedAt": "2026-03-13T03:26:08.457Z",
+    "completedAt": null
+  },
+  {
+    "id": "g-1773372368457-sqrl",
+    "description": "Libre",
+    "priority": 5,
+    "deadline": null,
+    "dependencies": [],
+    "subgoals": [],
+    "status": "pending",
+    "reward": 1,
+    "createdAt": "2026-03-13T03:26:08.457Z",
+    "updatedAt": "2026-03-13T03:26:08.457Z",
     "completedAt": null
   }
 ]

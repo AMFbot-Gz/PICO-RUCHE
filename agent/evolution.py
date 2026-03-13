@@ -17,13 +17,15 @@ import yaml
 from dotenv import load_dotenv
 load_dotenv()
 
-with open("agent_config.yml") as f:
+ROOT = Path(__file__).resolve().parent.parent
+
+with open(ROOT / "agent_config.yml") as f:
     CONFIG = yaml.safe_load(f)
 
 app = FastAPI(title="PICO-RUCHE Evolution", version="1.0.0")
 
-SKILLS_DIR = Path("agent/skills")
-LAYERS_DIR = Path("agent/layers")
+SKILLS_DIR = ROOT / "agent" / "skills"
+LAYERS_DIR = ROOT / "agent" / "layers"
 SKILLS_DIR.mkdir(parents=True, exist_ok=True)
 LAYERS_DIR.mkdir(parents=True, exist_ok=True)
 

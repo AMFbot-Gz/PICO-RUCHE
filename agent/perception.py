@@ -17,7 +17,9 @@ import yaml
 from dotenv import load_dotenv
 load_dotenv()
 
-with open("agent_config.yml") as f:
+ROOT = Path(__file__).resolve().parent.parent
+
+with open(ROOT / "agent_config.yml") as f:
     CONFIG = yaml.safe_load(f)
 
 app = FastAPI(title="PICO-RUCHE Perception", version="1.0.0")

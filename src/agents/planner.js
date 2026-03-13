@@ -7,18 +7,45 @@ import { callLLM } from "../llm/callLLM.js";
 import { getAllSkills, getRelevantSkills, formatSkillsForPrompt } from "../skills/skillLoader.js";
 import { routeByRules } from './intentRouter.js';
 import { buildCompactContext } from '../context/agentIdentity.js';
-import { recall, learn } from '../learning/missionMemory.js';
+import { recall, learn, getHeuristicHint } from '../learning/missionMemory.js';
+
+// ─── Utilitaire : tronquer un texte à N tokens estimés ────────────────────────
+// Estimation simple : 1 token ≈ 4 chars (anglais/code) — conservateur côté sécurité
+const CHARS_PER_TOKEN = 4;
+
+function truncateByTokens(text, maxTokens) {
+  const maxChars = maxTokens * CHARS_PER_TOKEN;
+  if (text.length <= maxChars) return text;
+  return text.slice(0, maxChars) + `\n…[tronqué à ${maxTokens} tokens]`;
+}
+
+// Budgets token pour le prompt planner (contexte total llama3.2:3b = 4096 tokens)
+const PLANNER_MAX_TOKENS_SKILLS  = 800;   // liste des skills
+const PLANNER_MAX_TOKENS_CTX     = 400;   // contexte agent
+const PLANNER_MAX_TOKENS_INTENT  = 200;   // intention utilisateur
 
 // ─── Prompt système planner ────────────────────────────────────────────────────────────
 function buildPlannerPrompt(intent, skills) {
-  const skillList = formatSkillsForPrompt(skills);
-  const ctx = buildCompactContext("worker");
-  return `${ctx}
+  const rawSkillList = formatSkillsForPrompt(skills);
+  const rawCtx = buildCompactContext("worker");
+
+  // Tronquer chaque bloc pour rester dans le contexte du LLM
+  const skillList  = truncateByTokens(rawSkillList, PLANNER_MAX_TOKENS_SKILLS);
+  const ctx        = truncateByTokens(rawCtx,       PLANNER_MAX_TOKENS_CTX);
+  const intentSafe = truncateByTokens(intent,       PLANNER_MAX_TOKENS_INTENT);
+
+  // Hint heuristique — priorité haute dans le prompt
+  const hint = getHeuristicHint(intent);
+  const hintLine = hint
+    ? `\nHeuristique apprise (confiance ${hint.confidence}): QUAND "${hint.when}" → ALORS "${hint.then}"\n`
+    : '';
+
+  return `${ctx}${hintLine}
 Skills disponibles: ${skillList}
 Règles: JSON seul. Steps atomiques. Skills exacts de la liste. Valeurs par défaut si ambigu.
 Pour le GUI: utiliser find_element/smart_click plutôt que des coordonnées.
 Format: {"goal":"objectif","confidence":0.9,"steps":[{"skill":"nom","params":{}}]}
-Intention: "${intent}"
+Intention: "${intentSafe}"
 JSON:`;
 }
 

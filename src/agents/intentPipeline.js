@@ -41,11 +41,23 @@ async function callMCP(serverFile, toolName, args = {}, timeout = 20000) {
         throw new Error("Empty MCP response");
       }
 
-      const parsed = JSON.parse(stdout.trim());
+      let parsed;
+      try {
+        parsed = JSON.parse(stdout.trim());
+      } catch (parseErr) {
+        throw new Error(`MCP JSON invalide: ${parseErr.message}`);
+      }
       if (parsed.error) throw new Error(parsed.error.message || "MCP Error");
 
       const text = parsed.result?.content?.[0]?.text;
-      return text ? JSON.parse(text) : (parsed.result || { success: true });
+      if (text) {
+        try {
+          return JSON.parse(text);
+        } catch {
+          return { success: true, raw: text };
+        }
+      }
+      return parsed.result || { success: true };
     } catch (e) {
       lastError = e.message;
       if (attempt < 3) await new Promise(r => setTimeout(r, 1000 * attempt));
@@ -91,7 +103,7 @@ async function loadSkillHandlers() {
   for (const skill of allSkills) {
     if (!skill.indexPath) continue;
     try {
-      const mod = await import(`${skill.indexPath}?t=${Date.now()}`);
+      const mod = await import(skill.indexPath);
       if (typeof mod.run === "function") {
         handlers[skill.name] = (params) => mod.run(params);
       }

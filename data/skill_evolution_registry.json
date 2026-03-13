@@ -878,5 +878,645 @@
     "lastUsed": "2026-03-13T01:58:57.104Z",
     "lastImproved": "2026-03-13T01:58:57.104Z",
     "successRate": 1
+  },
+  "test_skill_track_1773371221227": {
+    "skill": "test_skill_track_1773371221227",
+    "version": 1,
+    "usageCount": 1,
+    "successCount": 1,
+    "avgLatencyMs": 100,
+    "lastUsed": "2026-03-13T03:07:01.228Z",
+    "lastImproved": null,
+    "successRate": 1
+  },
+  "test_skill_mixed_1773371221230": {
+    "skill": "test_skill_mixed_1773371221230",
+    "version": 1,
+    "usageCount": 4,
+    "successCount": 2,
+    "avgLatencyMs": 108,
+    "lastUsed": "2026-03-13T03:07:01.230Z",
+    "lastImproved": null,
+    "successRate": 0.5
+  },
+  "test_skill_improve_1773371221231": {
+    "skill": "test_skill_improve_1773371221231",
+    "version": 1,
+    "usageCount": 10,
+    "successCount": 2,
+    "avgLatencyMs": 228,
+    "lastUsed": "2026-03-13T03:07:01.231Z",
+    "lastImproved": null,
+    "successRate": 0.2
+  },
+  "test_skill_bump_1773371221231": {
+    "skill": "test_skill_bump_1773371221231",
+    "version": 2,
+    "usageCount": 1,
+    "successCount": 1,
+    "avgLatencyMs": 100,
+    "lastUsed": "2026-03-13T03:07:01.232Z",
+    "lastImproved": "2026-03-13T03:07:01.232Z",
+    "successRate": 1
+  },
+  "test_skill_track_1773371237455": {
+    "skill": "test_skill_track_1773371237455",
+    "version": 1,
+    "usageCount": 1,
+    "successCount": 1,
+    "avgLatencyMs": 100,
+    "lastUsed": "2026-03-13T03:07:17.455Z",
+    "lastImproved": null,
+    "successRate": 1
+  },
+  "test_skill_mixed_1773371237457": {
+    "skill": "test_skill_mixed_1773371237457",
+    "version": 1,
+    "usageCount": 4,
+    "successCount": 2,
+    "avgLatencyMs": 108,
+    "lastUsed": "2026-03-13T03:07:17.457Z",
+    "lastImproved": null,
+    "successRate": 0.5
+  },
+  "test_skill_improve_1773371237458": {
+    "skill": "test_skill_improve_1773371237458",
+    "version": 1,
+    "usageCount": 10,
+    "successCount": 2,
+    "avgLatencyMs": 228,
+    "lastUsed": "2026-03-13T03:07:17.458Z",
+    "lastImproved": null,
+    "successRate": 0.2
+  },
+  "test_skill_bump_1773371237460": {
+    "skill": "test_skill_bump_1773371237460",
+    "version": 2,
+    "usageCount": 1,
+    "successCount": 1,
+    "avgLatencyMs": 100,
+    "lastUsed": "2026-03-13T03:07:17.460Z",
+    "lastImproved": "2026-03-13T03:07:17.460Z",
+    "successRate": 1
+  },
+  "test_skill_track_1773371375423": {
+    "skill": "test_skill_track_1773371375423",
+    "version": 1,
+    "usageCount": 1,
+    "successCount": 1,
+    "avgLatencyMs": 100,
+    "lastUsed": "2026-03-13T03:09:35.425Z",
+    "lastImproved": null,
+    "successRate": 1
+  },
+  "test_skill_mixed_1773371375426": {
+    "skill": "test_skill_mixed_1773371375426",
+    "version": 1,
+    "usageCount": 4,
+    "successCount": 2,
+    "avgLatencyMs": 108,
+    "lastUsed": "2026-03-13T03:09:35.426Z",
+    "lastImproved": null,
+    "successRate": 0.5
+  },
+  "test_skill_improve_1773371375427": {
+    "skill": "test_skill_improve_1773371375427",
+    "version": 1,
+    "usageCount": 10,
+    "successCount": 2,
+    "avgLatencyMs": 228,
+    "lastUsed": "2026-03-13T03:09:35.427Z",
+    "lastImproved": null,
+    "successRate": 0.2
+  },
+  "test_skill_bump_1773371375429": {
+    "skill": "test_skill_bump_1773371375429",
+    "version": 2,
+    "usageCount": 1,
+    "successCount": 1,
+    "avgLatencyMs": 100,
+    "lastUsed": "2026-03-13T03:09:35.429Z",
+    "lastImproved": "2026-03-13T03:09:35.429Z",
+    "successRate": 1
+  },
+  "test_skill_track_1773372047233": {
+    "skill": "test_skill_track_1773372047233",
+    "version": 1,
+    "usageCount": 1,
+    "successCount": 1,
+    "avgLatencyMs": 100,
+    "lastUsed": "2026-03-13T03:20:47.235Z",
+    "lastImproved": null,
+    "successRate": 1
+  },
+  "test_skill_mixed_1773372047236": {
+    "skill": "test_skill_mixed_1773372047236",
+    "version": 1,
+    "usageCount": 4,
+    "successCount": 2,
+    "avgLatencyMs": 108,
+    "lastUsed": "2026-03-13T03:20:47.236Z",
+    "lastImproved": null,
+    "successRate": 0.5
+  },
+  "test_skill_improve_1773372047238": {
+    "skill": "test_skill_improve_1773372047238",
+    "version": 1,
+    "usageCount": 10,
+    "successCount": 2,
+    "avgLatencyMs": 228,
+    "lastUsed": "2026-03-13T03:20:47.238Z",
+    "lastImproved": null,
+    "successRate": 0.2
+  },
+  "test_skill_bump_1773372047239": {
+    "skill": "test_skill_bump_1773372047239",
+    "version": 2,
+    "usageCount": 1,
+    "successCount": 1,
+    "avgLatencyMs": 100,
+    "lastUsed": "2026-03-13T03:20:47.239Z",
+    "lastImproved": "2026-03-13T03:20:47.239Z",
+    "successRate": 1
+  },
+  "test_skill_track_1773372171582": {
+    "skill": "test_skill_track_1773372171582",
+    "version": 1,
+    "usageCount": 1,
+    "successCount": 1,
+    "avgLatencyMs": 100,
+    "lastUsed": "2026-03-13T03:22:51.583Z",
+    "lastImproved": null,
+    "successRate": 1
+  },
+  "test_skill_mixed_1773372171584": {
+    "skill": "test_skill_mixed_1773372171584",
+    "version": 1,
+    "usageCount": 4,
+    "successCount": 2,
+    "avgLatencyMs": 108,
+    "lastUsed": "2026-03-13T03:22:51.584Z",
+    "lastImproved": null,
+    "successRate": 0.5
+  },
+  "test_skill_improve_1773372171585": {
+    "skill": "test_skill_improve_1773372171585",
+    "version": 1,
+    "usageCount": 10,
+    "successCount": 2,
+    "avgLatencyMs": 228,
+    "lastUsed": "2026-03-13T03:22:51.585Z",
+    "lastImproved": null,
+    "successRate": 0.2
+  },
+  "test_skill_bump_1773372171587": {
+    "skill": "test_skill_bump_1773372171587",
+    "version": 2,
+    "usageCount": 1,
+    "successCount": 1,
+    "avgLatencyMs": 100,
+    "lastUsed": "2026-03-13T03:22:51.587Z",
+    "lastImproved": "2026-03-13T03:22:51.587Z",
+    "successRate": 1
+  },
+  "test_skill_track_1773372302893": {
+    "skill": "test_skill_track_1773372302893",
+    "version": 1,
+    "usageCount": 1,
+    "successCount": 1,
+    "avgLatencyMs": 100,
+    "lastUsed": "2026-03-13T03:25:02.894Z",
+    "lastImproved": null,
+    "successRate": 1
+  },
+  "test_skill_mixed_1773372302895": {
+    "skill": "test_skill_mixed_1773372302895",
+    "version": 1,
+    "usageCount": 4,
+    "successCount": 2,
+    "avgLatencyMs": 108,
+    "lastUsed": "2026-03-13T03:25:02.895Z",
+    "lastImproved": null,
+    "successRate": 0.5
+  },
+  "test_skill_improve_1773372302897": {
+    "skill": "test_skill_improve_1773372302897",
+    "version": 1,
+    "usageCount": 10,
+    "successCount": 2,
+    "avgLatencyMs": 228,
+    "lastUsed": "2026-03-13T03:25:02.897Z",
+    "lastImproved": null,
+    "successRate": 0.2
+  },
+  "test_skill_bump_1773372302900": {
+    "skill": "test_skill_bump_1773372302900",
+    "version": 2,
+    "usageCount": 1,
+    "successCount": 1,
+    "avgLatencyMs": 100,
+    "lastUsed": "2026-03-13T03:25:02.900Z",
+    "lastImproved": "2026-03-13T03:25:02.900Z",
+    "successRate": 1
+  },
+  "test_skill_track_1773372368073": {
+    "skill": "test_skill_track_1773372368073",
+    "version": 1,
+    "usageCount": 1,
+    "successCount": 1,
+    "avgLatencyMs": 100,
+    "lastUsed": "2026-03-13T03:26:08.073Z",
+    "lastImproved": null,
+    "successRate": 1
+  },
+  "test_skill_mixed_1773372368075": {
+    "skill": "test_skill_mixed_1773372368075",
+    "version": 1,
+    "usageCount": 4,
+    "successCount": 2,
+    "avgLatencyMs": 108,
+    "lastUsed": "2026-03-13T03:26:08.075Z",
+    "lastImproved": null,
+    "successRate": 0.5
+  },
+  "test_skill_improve_1773372368076": {
+    "skill": "test_skill_improve_1773372368076",
+    "version": 1,
+    "usageCount": 10,
+    "successCount": 2,
+    "avgLatencyMs": 228,
+    "lastUsed": "2026-03-13T03:26:08.076Z",
+    "lastImproved": null,
+    "successRate": 0.2
+  },
+  "test_skill_bump_1773372368077": {
+    "skill": "test_skill_bump_1773372368077",
+    "version": 2,
+    "usageCount": 1,
+    "successCount": 1,
+    "avgLatencyMs": 100,
+    "lastUsed": "2026-03-13T03:26:08.077Z",
+    "lastImproved": "2026-03-13T03:26:08.077Z",
+    "successRate": 1
+  },
+  "test_skill_track_1773379040634": {
+    "skill": "test_skill_track_1773379040634",
+    "version": 1,
+    "usageCount": 1,
+    "successCount": 1,
+    "avgLatencyMs": 100,
+    "lastUsed": "2026-03-13T05:17:20.635Z",
+    "lastImproved": null,
+    "successRate": 1
+  },
+  "test_skill_mixed_1773379040635": {
+    "skill": "test_skill_mixed_1773379040635",
+    "version": 1,
+    "usageCount": 4,
+    "successCount": 2,
+    "avgLatencyMs": 108,
+    "lastUsed": "2026-03-13T05:17:20.635Z",
+    "lastImproved": null,
+    "successRate": 0.5
+  },
+  "test_skill_improve_1773379040636": {
+    "skill": "test_skill_improve_1773379040636",
+    "version": 1,
+    "usageCount": 10,
+    "successCount": 2,
+    "avgLatencyMs": 228,
+    "lastUsed": "2026-03-13T05:17:20.636Z",
+    "lastImproved": null,
+    "successRate": 0.2
+  },
+  "test_skill_bump_1773379040637": {
+    "skill": "test_skill_bump_1773379040637",
+    "version": 2,
+    "usageCount": 1,
+    "successCount": 1,
+    "avgLatencyMs": 100,
+    "lastUsed": "2026-03-13T05:17:20.637Z",
+    "lastImproved": "2026-03-13T05:17:20.637Z",
+    "successRate": 1
+  },
+  "test_skill_track_1773379310755": {
+    "skill": "test_skill_track_1773379310755",
+    "version": 1,
+    "usageCount": 1,
+    "successCount": 1,
+    "avgLatencyMs": 100,
+    "lastUsed": "2026-03-13T05:21:50.756Z",
+    "lastImproved": null,
+    "successRate": 1
+  },
+  "test_skill_mixed_1773379310757": {
+    "skill": "test_skill_mixed_1773379310757",
+    "version": 1,
+    "usageCount": 4,
+    "successCount": 2,
+    "avgLatencyMs": 108,
+    "lastUsed": "2026-03-13T05:21:50.757Z",
+    "lastImproved": null,
+    "successRate": 0.5
+  },
+  "test_skill_improve_1773379310758": {
+    "skill": "test_skill_improve_1773379310758",
+    "version": 1,
+    "usageCount": 10,
+    "successCount": 2,
+    "avgLatencyMs": 228,
+    "lastUsed": "2026-03-13T05:21:50.758Z",
+    "lastImproved": null,
+    "successRate": 0.2
+  },
+  "test_skill_bump_1773379310759": {
+    "skill": "test_skill_bump_1773379310759",
+    "version": 2,
+    "usageCount": 1,
+    "successCount": 1,
+    "avgLatencyMs": 100,
+    "lastUsed": "2026-03-13T05:21:50.759Z",
+    "lastImproved": "2026-03-13T05:21:50.759Z",
+    "successRate": 1
+  },
+  "test_skill_track_1773379329321": {
+    "skill": "test_skill_track_1773379329321",
+    "version": 1,
+    "usageCount": 1,
+    "successCount": 1,
+    "avgLatencyMs": 100,
+    "lastUsed": "2026-03-13T05:22:09.321Z",
+    "lastImproved": null,
+    "successRate": 1
+  },
+  "test_skill_mixed_1773379329322": {
+    "skill": "test_skill_mixed_1773379329322",
+    "version": 1,
+    "usageCount": 4,
+    "successCount": 2,
+    "avgLatencyMs": 108,
+    "lastUsed": "2026-03-13T05:22:09.322Z",
+    "lastImproved": null,
+    "successRate": 0.5
+  },
+  "test_skill_improve_1773379329323": {
+    "skill": "test_skill_improve_1773379329323",
+    "version": 1,
+    "usageCount": 10,
+    "successCount": 2,
+    "avgLatencyMs": 228,
+    "lastUsed": "2026-03-13T05:22:09.323Z",
+    "lastImproved": null,
+    "successRate": 0.2
+  },
+  "test_skill_bump_1773379329324": {
+    "skill": "test_skill_bump_1773379329324",
+    "version": 2,
+    "usageCount": 1,
+    "successCount": 1,
+    "avgLatencyMs": 100,
+    "lastUsed": "2026-03-13T05:22:09.324Z",
+    "lastImproved": "2026-03-13T05:22:09.324Z",
+    "successRate": 1
+  },
+  "test_skill_track_1773379610320": {
+    "skill": "test_skill_track_1773379610320",
+    "version": 1,
+    "usageCount": 1,
+    "successCount": 1,
+    "avgLatencyMs": 100,
+    "lastUsed": "2026-03-13T05:26:50.321Z",
+    "lastImproved": null,
+    "successRate": 1
+  },
+  "test_skill_mixed_1773379610322": {
+    "skill": "test_skill_mixed_1773379610322",
+    "version": 1,
+    "usageCount": 4,
+    "successCount": 2,
+    "avgLatencyMs": 108,
+    "lastUsed": "2026-03-13T05:26:50.322Z",
+    "lastImproved": null,
+    "successRate": 0.5
+  },
+  "test_skill_improve_1773379610322": {
+    "skill": "test_skill_improve_1773379610322",
+    "version": 1,
+    "usageCount": 10,
+    "successCount": 2,
+    "avgLatencyMs": 228,
+    "lastUsed": "2026-03-13T05:26:50.322Z",
+    "lastImproved": null,
+    "successRate": 0.2
+  },
+  "test_skill_bump_1773379610323": {
+    "skill": "test_skill_bump_1773379610323",
+    "version": 2,
+    "usageCount": 1,
+    "successCount": 1,
+    "avgLatencyMs": 100,
+    "lastUsed": "2026-03-13T05:26:50.323Z",
+    "lastImproved": "2026-03-13T05:26:50.323Z",
+    "successRate": 1
+  },
+  "test_skill_track_1773379876420": {
+    "skill": "test_skill_track_1773379876420",
+    "version": 1,
+    "usageCount": 1,
+    "successCount": 1,
+    "avgLatencyMs": 100,
+    "lastUsed": "2026-03-13T05:31:16.421Z",
+    "lastImproved": null,
+    "successRate": 1
+  },
+  "test_skill_mixed_1773379876421": {
+    "skill": "test_skill_mixed_1773379876421",
+    "version": 1,
+    "usageCount": 4,
+    "successCount": 2,
+    "avgLatencyMs": 108,
+    "lastUsed": "2026-03-13T05:31:16.421Z",
+    "lastImproved": null,
+    "successRate": 0.5
+  },
+  "test_skill_improve_1773379876422": {
+    "skill": "test_skill_improve_1773379876422",
+    "version": 1,
+    "usageCount": 10,
+    "successCount": 2,
+    "avgLatencyMs": 228,
+    "lastUsed": "2026-03-13T05:31:16.422Z",
+    "lastImproved": null,
+    "successRate": 0.2
+  },
+  "test_skill_bump_1773379876423": {
+    "skill": "test_skill_bump_1773379876423",
+    "version": 2,
+    "usageCount": 1,
+    "successCount": 1,
+    "avgLatencyMs": 100,
+    "lastUsed": "2026-03-13T05:31:16.423Z",
+    "lastImproved": "2026-03-13T05:31:16.423Z",
+    "successRate": 1
+  },
+  "test_skill_track_1773380079128": {
+    "skill": "test_skill_track_1773380079128",
+    "version": 1,
+    "usageCount": 1,
+    "successCount": 1,
+    "avgLatencyMs": 100,
+    "lastUsed": "2026-03-13T05:34:39.129Z",
+    "lastImproved": null,
+    "successRate": 1
+  },
+  "test_skill_mixed_1773380079130": {
+    "skill": "test_skill_mixed_1773380079130",
+    "version": 1,
+    "usageCount": 4,
+    "successCount": 2,
+    "avgLatencyMs": 108,
+    "lastUsed": "2026-03-13T05:34:39.130Z",
+    "lastImproved": null,
+    "successRate": 0.5
+  },
+  "test_skill_improve_1773380079131": {
+    "skill": "test_skill_improve_1773380079131",
+    "version": 1,
+    "usageCount": 10,
+    "successCount": 2,
+    "avgLatencyMs": 228,
+    "lastUsed": "2026-03-13T05:34:39.131Z",
+    "lastImproved": null,
+    "successRate": 0.2
+  },
+  "test_skill_bump_1773380079132": {
+    "skill": "test_skill_bump_1773380079132",
+    "version": 2,
+    "usageCount": 1,
+    "successCount": 1,
+    "avgLatencyMs": 100,
+    "lastUsed": "2026-03-13T05:34:39.132Z",
+    "lastImproved": "2026-03-13T05:34:39.132Z",
+    "successRate": 1
+  },
+  "test_skill_track_1773380100042": {
+    "skill": "test_skill_track_1773380100042",
+    "version": 1,
+    "usageCount": 1,
+    "successCount": 1,
+    "avgLatencyMs": 100,
+    "lastUsed": "2026-03-13T05:35:00.042Z",
+    "lastImproved": null,
+    "successRate": 1
+  },
+  "test_skill_mixed_1773380100043": {
+    "skill": "test_skill_mixed_1773380100043",
+    "version": 1,
+    "usageCount": 4,
+    "successCount": 2,
+    "avgLatencyMs": 108,
+    "lastUsed": "2026-03-13T05:35:00.043Z",
+    "lastImproved": null,
+    "successRate": 0.5
+  },
+  "test_skill_improve_1773380100044": {
+    "skill": "test_skill_improve_1773380100044",
+    "version": 1,
+    "usageCount": 10,
+    "successCount": 2,
+    "avgLatencyMs": 228,
+    "lastUsed": "2026-03-13T05:35:00.044Z",
+    "lastImproved": null,
+    "successRate": 0.2
+  },
+  "test_skill_bump_1773380100045": {
+    "skill": "test_skill_bump_1773380100045",
+    "version": 2,
+    "usageCount": 1,
+    "successCount": 1,
+    "avgLatencyMs": 100,
+    "lastUsed": "2026-03-13T05:35:00.045Z",
+    "lastImproved": "2026-03-13T05:35:00.045Z",
+    "successRate": 1
+  },
+  "test_skill_track_1773380171906": {
+    "skill": "test_skill_track_1773380171906",
+    "version": 1,
+    "usageCount": 1,
+    "successCount": 1,
+    "avgLatencyMs": 100,
+    "lastUsed": "2026-03-13T05:36:11.907Z",
+    "lastImproved": null,
+    "successRate": 1
+  },
+  "test_skill_mixed_1773380171908": {
+    "skill": "test_skill_mixed_1773380171908",
+    "version": 1,
+    "usageCount": 4,
+    "successCount": 2,
+    "avgLatencyMs": 108,
+    "lastUsed": "2026-03-13T05:36:11.908Z",
+    "lastImproved": null,
+    "successRate": 0.5
+  },
+  "test_skill_improve_1773380171910": {
+    "skill": "test_skill_improve_1773380171910",
+    "version": 1,
+    "usageCount": 10,
+    "successCount": 2,
+    "avgLatencyMs": 228,
+    "lastUsed": "2026-03-13T05:36:11.910Z",
+    "lastImproved": null,
+    "successRate": 0.2
+  },
+  "test_skill_bump_1773380171911": {
+    "skill": "test_skill_bump_1773380171911",
+    "version": 2,
+    "usageCount": 1,
+    "successCount": 1,
+    "avgLatencyMs": 100,
+    "lastUsed": "2026-03-13T05:36:11.911Z",
+    "lastImproved": "2026-03-13T05:36:11.911Z",
+    "successRate": 1
+  },
+  "test_skill_track_1773380274863": {
+    "skill": "test_skill_track_1773380274863",
+    "version": 1,
+    "usageCount": 1,
+    "successCount": 1,
+    "avgLatencyMs": 100,
+    "lastUsed": "2026-03-13T05:37:54.864Z",
+    "lastImproved": null,
+    "successRate": 1
+  },
+  "test_skill_mixed_1773380274865": {
+    "skill": "test_skill_mixed_1773380274865",
+    "version": 1,
+    "usageCount": 4,
+    "successCount": 2,
+    "avgLatencyMs": 108,
+    "lastUsed": "2026-03-13T05:37:54.866Z",
+    "lastImproved": null,
+    "successRate": 0.5
+  },
+  "test_skill_improve_1773380274867": {
+    "skill": "test_skill_improve_1773380274867",
+    "version": 1,
+    "usageCount": 10,
+    "successCount": 2,
+    "avgLatencyMs": 228,
+    "lastUsed": "2026-03-13T05:37:54.867Z",
+    "lastImproved": null,
+    "successRate": 0.2
+  },
+  "test_skill_bump_1773380274868": {
+    "skill": "test_skill_bump_1773380274868",
+    "version": 2,
+    "usageCount": 1,
+    "successCount": 1,
+    "avgLatencyMs": 100,
+    "lastUsed": "2026-03-13T05:37:54.868Z",
+    "lastImproved": "2026-03-13T05:37:54.868Z",
+    "successRate": 1
   }
 }

@@ -7,6 +7,7 @@ import os
 import json
 import asyncio
 import httpx
+import unicodedata
 from datetime import datetime
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
@@ -18,7 +19,9 @@ import yaml
 from dotenv import load_dotenv
 load_dotenv()
 
-with open("agent_config.yml") as f:
+ROOT = Path(__file__).resolve().parent.parent
+
+with open(ROOT / "agent_config.yml") as f:
     CONFIG = yaml.safe_load(f)
 
 app = FastAPI(title="PICO-RUCHE Executor", version="1.0.0")
@@ -33,6 +36,20 @@ pyautogui.PAUSE = 0.3
 
 # Thread pool dédié aux appels PyAutoGUI (bloquants — à ne pas exécuter dans l'event loop)
 _gui_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="pyautogui")
+
+
+def _type_text_safe(text: str, interval: float = 0.05):
+    """Frappe du texte en gérant les accents via clipboard."""
+    try:
+        import pyperclip
+        pyperclip.copy(text)
+        import pyautogui
+        pyautogui.hotkey('command', 'v')  # macOS
+    except ImportError:
+        import pyautogui
+        # Fallback: typewrite pour les ASCII simples uniquement
+        safe_text = ''.join(c for c in text if ord(c) < 128)
+        pyautogui.typewrite(safe_text, interval=interval)
 
 
 async def _gui(fn, *args, **kwargs):
@@ -120,7 +137,9 @@ async def click(req: ClickRequest):
 @app.post("/type")
 async def type_text(req: TypeRequest):
     try:
-        await _gui(pyautogui.typewrite, req.text, interval=req.interval)
+        # pyautogui.typewrite() ne supporte pas les accents/unicode
+        # _type_text_safe utilise pyperclip + paste pour les textes non-ASCII
+        await _gui(_type_text_safe, req.text, req.interval)
         return {"typed": True, "length": len(req.text)}
     except pyautogui.FailSafeException:
         raise HTTPException(status_code=400, detail="FailSafe PyAutoGUI déclenché")
@@ -191,6 +210,14 @@ async def shell(req: ShellRequest):
         # 4. Troncature sortie à OUTPUT_MAX_CHARS
         stdout = result.stdout[:OUTPUT_MAX_CHARS]
         stderr = result.stderr[:OUTPUT_MAX_CHARS]
+
+        # Log explicite si la commande échoue (facilite le debug)
+        if result.returncode != 0:
+            print(f"[Executor] ⚠️ Commande échouée (rc={result.returncode})")
+            print(f"[Executor]   CMD    : {req.command[:200]}")
+            print(f"[Executor]   STDOUT : {stdout[:300] or '(vide)'}")
+            print(f"[Executor]   STDERR : {stderr[:300] or '(vide)'}")
+
         return {
             "stdout": stdout,
             "stderr": stderr,
@@ -200,6 +227,7 @@ async def shell(req: ShellRequest):
             "truncated": len(result.stdout) > OUTPUT_MAX_CHARS or len(result.stderr) > OUTPUT_MAX_CHARS,
         }
     except subprocess.TimeoutExpired:
+        print(f"[Executor] ⏱️ Timeout ({SHELL_TIMEOUT}s) — CMD: {req.command[:200]}")
         return {
             "stdout": "",
             "stderr": f"Timeout: commande dépassé {SHELL_TIMEOUT}s",
@@ -208,6 +236,7 @@ async def shell(req: ShellRequest):
             "command": req.command,
         }
     except Exception as e:
+        print(f"[Executor] ❌ Exception inattendue — CMD: {req.command[:200]} — ERR: {e}")
         return {
             "stdout": "",
             "stderr": str(e)[:OUTPUT_MAX_CHARS],

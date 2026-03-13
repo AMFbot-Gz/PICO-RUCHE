@@ -14,14 +14,16 @@ import yaml
 from dotenv import load_dotenv
 load_dotenv()
 
-with open("agent_config.yml") as f:
+ROOT = Path(__file__).resolve().parent.parent
+
+with open(ROOT / "agent_config.yml") as f:
     CONFIG = yaml.safe_load(f)
 
 app = FastAPI(title="PICO-RUCHE Memory", version="1.0.0")
 
-EPISODE_FILE = Path(CONFIG["memory"]["episode_file"])
-PERSISTENT_FILE = Path(CONFIG["memory"]["persistent_file"])
-WORLD_STATE_FILE = Path(CONFIG["memory"]["world_state_file"])
+EPISODE_FILE = ROOT / CONFIG["memory"]["episode_file"]
+PERSISTENT_FILE = ROOT / CONFIG["memory"]["persistent_file"]
+WORLD_STATE_FILE = ROOT / CONFIG["memory"]["world_state_file"]
 MAX_EPISODES = CONFIG["memory"]["max_episodes"]
 
 EPISODE_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -46,41 +48,65 @@ class WorldStateUpdate(BaseModel):
     value: Any
 
 
+def _read_episodes_safe(filepath: Path) -> list:
+    """Lit episodes.jsonl en sautant les lignes corrompues."""
+    episodes = []
+    if not filepath.exists():
+        return episodes
+    for line in filepath.read_text(encoding="utf-8").strip().split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            episodes.append(json.loads(line))
+        except json.JSONDecodeError as e:
+            print(f"[Memory] Ligne corrompue ignorée: {e} — {line[:80]}")
+    return episodes
+
+
+async def _trim_episodes_if_needed(filepath: Path, max_ep: int):
+    """Troncature asynchrone — uniquement si trop grand (>1MB)."""
+    try:
+        if not filepath.exists() or filepath.stat().st_size < 1_000_000:
+            return
+        episodes = _read_episodes_safe(filepath)
+        if len(episodes) > max_ep:
+            with open(filepath, "w", encoding="utf-8") as f:
+                for ep in episodes[-max_ep:]:
+                    f.write(json.dumps(ep, ensure_ascii=False) + "\n")
+            print(f"[Memory] Troncature: {len(episodes)} → {max_ep} épisodes")
+    except Exception as e:
+        print(f"[Memory] Trim error: {e}")
+
+
 @app.post("/episode")
 async def save_episode(episode: Episode):
     entry = {
         "timestamp": datetime.utcnow().isoformat(),
         **episode.model_dump()
     }
-    with open(EPISODE_FILE, "a") as f:
+    with open(EPISODE_FILE, "a", encoding="utf-8") as f:
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-    lines = [l for l in EPISODE_FILE.read_text().strip().split("\n") if l]
-    if len(lines) > MAX_EPISODES:
-        EPISODE_FILE.write_text("\n".join(lines[-MAX_EPISODES:]) + "\n")
+    # Troncature en tâche background — non bloquante, uniquement si >1MB
+    asyncio.create_task(_trim_episodes_if_needed(EPISODE_FILE, MAX_EPISODES))
     if episode.learned:
-        with open(PERSISTENT_FILE, "a") as f:
+        with open(PERSISTENT_FILE, "a", encoding="utf-8") as f:
             f.write(f"\n### {datetime.utcnow().strftime('%Y-%m-%d %H:%M')} — Apprentissage\n{episode.learned}\n")
-    return {"saved": True, "total_episodes": len(lines)}
+    episodes = _read_episodes_safe(EPISODE_FILE)
+    return {"saved": True, "total_episodes": len(episodes)}
 
 
 @app.get("/episodes")
 async def get_episodes(limit: int = 20):
-    if not EPISODE_FILE.exists():
-        return {"episodes": []}
-    lines = [l for l in EPISODE_FILE.read_text().strip().split("\n") if l]
-    episodes = [json.loads(l) for l in lines[-limit:]]
-    return {"episodes": list(reversed(episodes))}
+    episodes = _read_episodes_safe(EPISODE_FILE)
+    return {"episodes": list(reversed(episodes[-limit:]))}
 
 
 @app.post("/search")
 async def search_episodes(query: dict):
     keywords = query.get("keywords", [])
-    if not EPISODE_FILE.exists():
-        return {"results": []}
-    lines = [l for l in EPISODE_FILE.read_text().strip().split("\n") if l]
     results = []
-    for line in lines:
-        ep = json.loads(line)
+    for ep in _read_episodes_safe(EPISODE_FILE):
         text = (ep.get("mission", "") + ep.get("result", "") + ep.get("learned", "")).lower()
         if any(k.lower() in text for k in keywords):
             results.append(ep)
@@ -89,12 +115,12 @@ async def search_episodes(query: dict):
 
 @app.get("/world")
 async def get_world_state():
-    return json.loads(WORLD_STATE_FILE.read_text())
+    return json.loads(WORLD_STATE_FILE.read_text(encoding="utf-8"))
 
 
 @app.post("/world")
 async def update_world_state(update: WorldStateUpdate):
-    state = json.loads(WORLD_STATE_FILE.read_text())
+    state = json.loads(WORLD_STATE_FILE.read_text(encoding="utf-8"))
     state[update.key] = update.value
     state["last_updated"] = datetime.utcnow().isoformat()
     WORLD_STATE_FILE.write_text(json.dumps(state, indent=2, ensure_ascii=False))
@@ -103,8 +129,8 @@ async def update_world_state(update: WorldStateUpdate):
 
 @app.get("/profile")
 async def get_profile():
-    profile = PERSISTENT_FILE.read_text() if PERSISTENT_FILE.exists() else "Aucun profil."
-    episodes_count = len([l for l in EPISODE_FILE.read_text().strip().split("\n") if l]) if EPISODE_FILE.exists() else 0
+    profile = PERSISTENT_FILE.read_text(encoding="utf-8") if PERSISTENT_FILE.exists() else "Aucun profil."
+    episodes_count = len(_read_episodes_safe(EPISODE_FILE))
     return {"profile": profile, "total_episodes": episodes_count}
 
 
@@ -112,9 +138,7 @@ async def get_profile():
 async def health():
     episode_count = 0
     try:
-        if EPISODE_FILE.exists():
-            lines = [l for l in EPISODE_FILE.read_text().strip().split("\n") if l]
-            episode_count = len(lines)
+        episode_count = len(_read_episodes_safe(EPISODE_FILE))
     except Exception:
         pass
     return {

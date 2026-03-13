@@ -20,3 +20,6 @@
 
 ## Apprentissages
 [Rempli automatiquement par evolution.py]
+
+### 2026-03-13 04:46 — Apprentissage
+PROCÉDURE FIN DE MISSION OBLIGATOIRE : 1) Finaliser l'action demandée. 2) Mettre à jour ~/world_state.json : last_updated (datetime UTC), active_app, top_processes (via `ps aux -m | head -12`), et toute clé impactée. 3) Confirmer avec "🧠 World State mis à jour". Note: open_app ne fonctionne pas, utiliser `execute_shell` avec `open -a NomApp`.

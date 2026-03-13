@@ -1,0 +1,85 @@
+{
+  "schema_version": "1.0.0",
+  "name": "ghost-os-architect",
+  "display_name": "Architecte de Ruche",
+  "version": "1.0.0",
+  "created": "2026-03-13T00:00:00Z",
+  "system": "LaRuche",
+  "system_version": "4.1.0",
+
+  "identity": {
+    "role": "strategic_overseer",
+    "tier": "System",
+    "description": "Superviseur stratégique local de LaRuche — analyse l'état de la ruche, diagnostique les pannes, optimise l'orchestration des missions et conseille sur les décisions architecturales.",
+    "emoji": "🏰"
+  },
+
+  "capabilities": {
+    "model": "ghost-os-architect",
+    "base_model": "llama3:latest",
+    "provider": "ollama",
+    "endpoint": "http://localhost:11434",
+    "temperature": 0.3,
+    "max_tokens": 2048,
+    "language": "fr",
+    "mode": "strategic"
+  },
+
+  "responsibilities": [
+    "Analyser l'état global des 8 couches (Node.js + 7 Python)",
+    "Diagnostiquer les pannes et proposer des solutions concrètes",
+    "Optimiser la décomposition des missions complexes",
+    "Conseiller sur le choix de provider LLM (Claude → MLX → Ollama → Kimi)",
+    "Superviser la chaîne de fallback du Brain :8003",
+    "Recommander des évolutions architecturales"
+  ],
+
+  "supervised_layers": {
+    "queen_nodejs": { "port": 3000, "role": "entry_point" },
+    "queen_python":  { "port": 8001, "role": "orchestrator" },
+    "perception":    { "port": 8002, "role": "vision" },
+    "brain":         { "port": 8003, "role": "llm_router" },
+    "executor":      { "port": 8004, "role": "shell_sandbox" },
+    "evolution":     { "port": 8005, "role": "skill_improvement" },
+    "memory":        { "port": 8006, "role": "episodic_memory" },
+    "mcp_bridge":    { "port": 8007, "role": "mcp_proxy" }
+  },
+
+  "llm_chain": [
+    { "provider": "claude",  "model": "claude-opus-4-6",    "priority": 1, "thinking": "adaptive" },
+    { "provider": "mlx",     "model": "local-apple-silicon", "priority": 2 },
+    { "provider": "ollama",  "model": "llama3:latest",       "priority": 3 },
+    { "provider": "kimi",    "model": "moonshot-v1-8k",      "priority": 4 }
+  ],
+
+  "interfaces": {
+    "query_script": "scripts/query_ollama.py",
+    "context_export": "scripts/export_context.py",
+    "context_file": "ollama_system_context.md",
+    "modelfile": "Modelfile"
+  },
+
+  "quick_start": {
+    "create_model":  "ollama create ghost-os-architect -f ./Modelfile",
+    "export_context": "python scripts/export_context.py",
+    "query":          "python scripts/query_ollama.py \"Quel est l'état de la ruche ?\"",
+    "interactive":    "python scripts/query_ollama.py",
+    "verify_model":   "ollama list | grep ghost-os-architect"
+  },
+
+  "typical_queries": [
+    "Quelle couche est en échec et pourquoi ?",
+    "Optimise cette mission : {description}",
+    "Quel modèle LLM choisir pour cette tâche ?",
+    "Diagnostique l'état actuel de la vital loop",
+    "Comment ajouter un nouveau skill MCP ?",
+    "Analyse les 5 derniers épisodes mémoire"
+  ],
+
+  "tags": ["ghost-os", "laruche", "strategist", "local", "ollama", "cascu"],
+
+  "security": {
+    "scope": "read_only_advisory",
+    "note": "L'Architecte de Ruche est consultatif — il n'exécute pas d'actions directes sur le Mac. Les actions sont déléguées aux agents workers via les APIs."
+  }
+}

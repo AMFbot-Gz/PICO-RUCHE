@@ -1,0 +1,9 @@
+{
+  "name": "open_google",
+  "description": "Ouvre https://google.com dans Safari",
+  "version": "1.0.0",
+  "tier": "learned",
+  "learned_from": "Demande utilisateur : sauvegarder un skill pour ouvrir Google dans Safari",
+  "created": "2026-03-13T04:48:18.257153",
+  "author": "claude-architecte"
+}

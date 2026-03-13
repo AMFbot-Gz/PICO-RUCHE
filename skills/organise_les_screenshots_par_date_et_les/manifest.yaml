@@ -1,0 +1,38 @@
+identity:
+  id: organise_les_screenshots_par_date_et_les
+  version: 1.0.0
+  tier: System
+  created: '2026-03-13T03:03:06.016Z'
+capabilities:
+  model: llama3.2:3b
+  temperature: 0.3
+  max_tokens: 1024
+  mcp_tools:
+    - mcp-terminal
+contracts:
+  accepts:
+    type: object
+    properties:
+      params:
+        type: object
+        description: Paramètres spécifiques au skill
+    required: []
+  produces:
+    type: object
+    properties:
+      success:
+        type: boolean
+      result:
+        type: string
+      error:
+        type: string
+      duration_ms:
+        type: number
+    required:
+      - success
+permissions:
+  os_tools: []
+  network: []
+  filesystem:
+    - read
+    - write_tmp

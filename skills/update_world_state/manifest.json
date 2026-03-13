@@ -1,0 +1,9 @@
+{
+  "name": "update_world_state",
+  "description": "Met \u00e0 jour ~/world_state.json apr\u00e8s chaque mission \u2014 proc\u00e9dure obligatoire de fin de mission",
+  "version": "1.0.0",
+  "tier": "learned",
+  "learned_from": "Mission: cr\u00e9er habitude de mise \u00e0 jour world_state apr\u00e8s chaque mission",
+  "created": "2026-03-13T05:46:43.682655",
+  "author": "claude-architecte"
+}

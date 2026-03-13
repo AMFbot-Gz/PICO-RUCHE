@@ -415,6 +415,117 @@ export function memoryStats() {
   };
 }
 
+// ─── Heuristiques Dream Cycle ─────────────────────────────────────────────────
+
+// Chemin vers le fichier heuristiques
+const HEURISTICS_FILE = join(ROOT, 'agent/memory/heuristics.jsonl');
+
+// Cache en RAM avec TTL 60s
+let _heuristicsCache = null;
+let _heuristicsCacheAt = 0;
+const HEURISTICS_TTL_MS = 60_000;
+
+/**
+ * Charge les heuristiques depuis le fichier JSONL.
+ * Cache en RAM avec TTL 60s.
+ * @returns {Array<{when: string, then: string, confidence: number}>}
+ */
+function loadHeuristics() {
+  const now = Date.now();
+  if (_heuristicsCache && (now - _heuristicsCacheAt) < HEURISTICS_TTL_MS) {
+    return _heuristicsCache;
+  }
+
+  try {
+    if (!existsSync(HEURISTICS_FILE)) {
+      _heuristicsCache = [];
+      _heuristicsCacheAt = now;
+      return _heuristicsCache;
+    }
+
+    const lines = readFileSync(HEURISTICS_FILE, 'utf8')
+      .split('\n')
+      .filter(l => l.trim().length > 0);
+
+    _heuristicsCache = lines.map(l => {
+      try { return JSON.parse(l); } catch { return null; }
+    }).filter(Boolean);
+
+    _heuristicsCacheAt = now;
+  } catch {
+    _heuristicsCache = [];
+    _heuristicsCacheAt = now;
+  }
+
+  return _heuristicsCache;
+}
+
+/**
+ * Normalise un texte pour le matching heuristique :
+ * lowercase + retire accents + retire ponctuation.
+ * @param {string} text
+ * @returns {string}
+ */
+function normalizeForHeuristic(text) {
+  return (text || '')
+    .toLowerCase()
+    .replace(/[àáâãä]/g, 'a').replace(/[éèêë]/g, 'e')
+    .replace(/[îï]/g, 'i').replace(/[ôö]/g, 'o').replace(/[ùûü]/g, 'u')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Cherche une heuristique correspondant à la commande.
+ * Matching simple : mots-clés du champ "when" présents dans command (normalisé).
+ * Retourne la meilleure heuristique ou null.
+ *
+ * @param {string} command
+ * @returns {{ when: string, then: string, confidence: number } | null}
+ */
+export function getHeuristicHint(command) {
+  if (!command) return null;
+
+  const heuristics = loadHeuristics();
+  if (heuristics.length === 0) return null;
+
+  const normalizedCommand = normalizeForHeuristic(command);
+
+  let bestHeuristic = null;
+  let bestScore = 0;
+
+  for (const h of heuristics) {
+    if (!h.when || !h.then || typeof h.confidence !== 'number') continue;
+
+    // Extrait les mots-clés du champ "when" (>3 chars)
+    const whenNorm = normalizeForHeuristic(h.when);
+    const keywords = whenNorm.split(' ').filter(w => w.length > 3);
+
+    if (keywords.length === 0) continue;
+
+    // Compte combien de mots-clés sont présents dans la commande normalisée
+    const found = keywords.filter(kw => normalizedCommand.includes(kw)).length;
+
+    // Score = (mots_trouvés / total_mots_when) * confidence
+    const score = (found / keywords.length) * h.confidence;
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestHeuristic = h;
+    }
+  }
+
+  // Retourne la meilleure si score > 0.5
+  if (!bestHeuristic || bestScore <= 0.5) return null;
+
+  return {
+    when: bestHeuristic.when,
+    then: bestHeuristic.then,
+    confidence: bestHeuristic.confidence,
+  };
+}
+
 /**
  * Supprime une route (pour les corrections manuelles)
  */

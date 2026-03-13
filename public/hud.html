@@ -1,0 +1,1119 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PICO-RUCHE — Ghost OS v7 HUD</title>
+  <style>
+    /* ── Reset & Variables ─────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0d1117;
+      --bg2:       #161b22;
+      --bg3:       #21262d;
+      --border:    #30363d;
+      --text:      #e6edf3;
+      --text-dim:  #8b949e;
+      --blue:      #58a6ff;
+      --green:     #3fb950;
+      --green-vif: #7ee787;
+      --red:       #f85149;
+      --yellow:    #d29922;
+      --purple:    #bc8cff;
+      --grey:      #6e7681;
+      --orange:    #ffa657;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    /* ── Layout racine ─────────────────────────────────────────────── */
+    #app {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* ── Barre de config WS (en haut) ─────────────────────────────── */
+    #ws-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      background: var(--bg2);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    #ws-bar label {
+      color: var(--text-dim);
+      font-size: 11px;
+      white-space: nowrap;
+    }
+
+    #ws-url-input {
+      flex: 1;
+      max-width: 300px;
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 12px;
+      padding: 3px 8px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    #ws-url-input:focus { border-color: var(--blue); }
+
+    #ws-connect-btn {
+      background: var(--blue);
+      color: var(--bg);
+      border: none;
+      border-radius: 4px;
+      padding: 4px 12px;
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+    #ws-connect-btn:hover { opacity: 0.85; }
+
+    /* ── 3 colonnes ────────────────────────────────────────────────── */
+    #columns {
+      display: grid;
+      grid-template-columns: 240px 1fr 280px;
+      gap: 0;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    .col {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      border-right: 1px solid var(--border);
+    }
+    .col:last-child { border-right: none; }
+
+    .col-header {
+      padding: 10px 14px 8px;
+      border-bottom: 1px solid var(--border);
+      font-size: 11px;
+      font-weight: bold;
+      color: var(--text-dim);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      flex-shrink: 0;
+    }
+
+    /* ── Colonne Gauche — Status ────────────────────────────────────── */
+    #col-status {
+      background: var(--bg2);
+    }
+
+    #col-status .inner {
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      overflow-y: auto;
+    }
+
+    /* Badge Ghost OS */
+    #ghost-badge {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      padding: 16px 10px;
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+
+    #ghost-badge .title {
+      font-size: 15px;
+      font-weight: bold;
+      color: var(--green);
+      letter-spacing: 0.1em;
+    }
+
+    #ghost-badge .sub {
+      font-size: 10px;
+      color: var(--text-dim);
+    }
+
+    /* Anneau pulsant */
+    .pulse-ring {
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      border: 2px solid var(--green);
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .pulse-ring::after {
+      content: '';
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      border: 2px solid var(--green);
+      animation: pulse-ring 2s ease-out infinite;
+    }
+    @keyframes pulse-ring {
+      0%   { transform: scale(1);   opacity: 0.8; }
+      100% { transform: scale(1.8); opacity: 0; }
+    }
+    .pulse-ring .hex { font-size: 20px; }
+
+    /* Indicateur WS */
+    #ws-status-block {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding: 10px;
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+    }
+    #ws-status-block .ws-label {
+      font-size: 10px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    #ws-indicator {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+    }
+    #ws-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      transition: background 0.3s;
+    }
+    #ws-dot.connected    { background: var(--green); box-shadow: 0 0 6px var(--green); }
+    #ws-dot.disconnected { background: var(--red); }
+    #ws-dot.reconnecting { background: var(--yellow); animation: blink 1s step-end infinite; }
+    @keyframes blink { 50% { opacity: 0.2; } }
+
+    #retry-count {
+      font-size: 10px;
+      color: var(--text-dim);
+      height: 14px;
+    }
+
+    /* Compteurs */
+    .counters {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .counter-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 7px 10px;
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+    }
+    .counter-row .c-label {
+      color: var(--text-dim);
+      font-size: 11px;
+    }
+    .counter-row .c-value {
+      font-size: 16px;
+      font-weight: bold;
+      min-width: 28px;
+      text-align: right;
+    }
+    .counter-row.active .c-value   { color: var(--blue); }
+    .counter-row.pending .c-value  { color: var(--yellow); }
+    .counter-row.done .c-value     { color: var(--green); }
+
+    /* Crédits */
+    #credits-block {
+      padding: 8px 10px;
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      font-size: 11px;
+      display: none;
+    }
+    #credits-block .c-label { color: var(--text-dim); margin-bottom: 3px; }
+    #credits-block .c-value { color: var(--orange); font-weight: bold; }
+
+    /* ── Colonne Centre — Live Feed ─────────────────────────────────── */
+    #col-feed {
+      background: var(--bg);
+    }
+
+    #feed-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 14px;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+      background: var(--bg2);
+    }
+
+    #feed-toolbar .title {
+      font-size: 11px;
+      font-weight: bold;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    #pause-btn {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 11px;
+      padding: 3px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    #pause-btn:hover { background: var(--border); }
+    #pause-btn.paused { color: var(--yellow); border-color: var(--yellow); }
+
+    #feed-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 6px 0;
+      scroll-behavior: smooth;
+    }
+
+    /* Entrée de log */
+    .feed-entry {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 5px 14px;
+      border-bottom: 1px solid transparent;
+      animation: fade-in 0.25s ease-out;
+      transition: background 0.15s;
+    }
+    .feed-entry:hover { background: var(--bg2); }
+
+    @keyframes fade-in {
+      from { opacity: 0; transform: translateY(-4px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .feed-entry .fe-icon {
+      flex-shrink: 0;
+      width: 18px;
+      text-align: center;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .feed-entry .fe-time {
+      flex-shrink: 0;
+      color: var(--grey);
+      font-size: 11px;
+      padding-top: 1px;
+      min-width: 56px;
+    }
+
+    .feed-entry .fe-content {
+      flex: 1;
+      word-break: break-word;
+      font-size: 12px;
+    }
+
+    .feed-entry .fe-content .fe-tag {
+      font-size: 10px;
+      font-weight: bold;
+      padding: 1px 5px;
+      border-radius: 3px;
+      margin-right: 5px;
+      vertical-align: middle;
+    }
+
+    /* Couleurs par type */
+    .fe-mission-start  .fe-content { color: var(--blue); }
+    .fe-mission-start  .fe-tag     { background: rgba(88,166,255,0.15); color: var(--blue); }
+    .fe-thinking       .fe-content { color: var(--purple); }
+    .fe-thinking       .fe-tag     { background: rgba(188,140,255,0.15); color: var(--purple); }
+    .fe-task-start     .fe-content { color: var(--text-dim); }
+    .fe-task-start     .fe-tag     { background: rgba(110,118,129,0.2); color: var(--grey); }
+    .fe-task-done-ok   .fe-content { color: var(--green); }
+    .fe-task-done-ok   .fe-tag     { background: rgba(63,185,80,0.15); color: var(--green); }
+    .fe-task-done-err  .fe-content { color: var(--red); }
+    .fe-task-done-err  .fe-tag     { background: rgba(248,81,73,0.15); color: var(--red); }
+    .fe-mission-complete .fe-content { color: var(--green-vif); font-weight: bold; }
+    .fe-mission-complete .fe-tag   { background: rgba(126,231,135,0.15); color: var(--green-vif); }
+    .fe-queue-update   .fe-content { color: var(--yellow); }
+    .fe-queue-update   .fe-tag     { background: rgba(210,153,34,0.15); color: var(--yellow); }
+    .fe-plan-ready     .fe-content { color: var(--orange); }
+    .fe-plan-ready     .fe-tag     { background: rgba(255,166,87,0.15); color: var(--orange); }
+    .fe-error          .fe-content { color: var(--red); }
+    .fe-error          .fe-tag     { background: rgba(248,81,73,0.15); color: var(--red); }
+    .fe-default        .fe-content { color: var(--text-dim); }
+    .fe-default        .fe-tag     { background: var(--bg3); color: var(--text-dim); }
+
+    /* ── Colonne Droite — Mission active ────────────────────────────── */
+    #col-mission {
+      background: var(--bg2);
+    }
+
+    #col-mission .inner {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    /* Mission en cours */
+    #active-mission-card {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    #active-mission-card .am-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    #active-mission-card .am-badge {
+      font-size: 10px;
+      font-weight: bold;
+      color: var(--blue);
+      background: rgba(88,166,255,0.12);
+      padding: 2px 7px;
+      border-radius: 3px;
+      letter-spacing: 0.05em;
+      animation: pulse-blue 2s ease-in-out infinite;
+    }
+    @keyframes pulse-blue {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.5; }
+    }
+    #active-mission-card .am-timer {
+      font-size: 13px;
+      font-weight: bold;
+      color: var(--yellow);
+      font-variant-numeric: tabular-nums;
+    }
+
+    #active-mission-card .am-command {
+      font-size: 12px;
+      color: var(--text);
+      word-break: break-word;
+      border-left: 2px solid var(--blue);
+      padding-left: 8px;
+    }
+
+    /* Progress bar */
+    .progress-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .progress-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 10px;
+      color: var(--text-dim);
+    }
+    .progress-bar-bg {
+      height: 6px;
+      background: var(--bg);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      background: var(--blue);
+      border-radius: 3px;
+      transition: width 0.4s ease;
+    }
+
+    /* Steps */
+    .steps-list {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      max-height: 160px;
+      overflow-y: auto;
+    }
+
+    .step-item {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 11px;
+      padding: 3px 6px;
+      border-radius: 4px;
+    }
+    .step-item.pending  { color: var(--text-dim); }
+    .step-item.running  { color: var(--blue);     background: rgba(88,166,255,0.07); animation: pulse-blue 1.5s infinite; }
+    .step-item.ok       { color: var(--green); }
+    .step-item.error    { color: var(--red); }
+
+    .step-item .step-icon { flex-shrink: 0; width: 14px; text-align: center; }
+    .step-item .step-text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* Aucune mission */
+    #no-mission {
+      color: var(--text-dim);
+      font-size: 11px;
+      text-align: center;
+      padding: 20px 0;
+    }
+
+    /* Historique missions */
+    #history-section { display: flex; flex-direction: column; gap: 8px; }
+    #history-section .h-title {
+      font-size: 10px;
+      font-weight: bold;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 5px;
+    }
+
+    .hist-item {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      padding: 7px 9px;
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      animation: fade-in 0.25s ease-out;
+    }
+    .hist-item .hi-cmd {
+      font-size: 11px;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .hist-item .hi-meta {
+      display: flex;
+      gap: 8px;
+      font-size: 10px;
+      color: var(--text-dim);
+    }
+    .hist-item .hi-status.ok    { color: var(--green); }
+    .hist-item .hi-status.error { color: var(--red); }
+
+    /* ── Scrollbar ──────────────────────────────────────────────────── */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+
+    /* ── Responsive : mobile (< 700px) ─────────────────────────────── */
+    @media (max-width: 700px) {
+      #columns {
+        grid-template-columns: 1fr;
+        overflow-y: auto;
+      }
+      .col {
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+        min-height: 300px;
+        overflow: visible;
+      }
+      #feed-list { max-height: 400px; }
+      #col-mission .inner { max-height: 500px; }
+    }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ── Barre de config WebSocket ───────────────────────────────── -->
+  <div id="ws-bar">
+    <label for="ws-url-input">WS URL :</label>
+    <input id="ws-url-input" type="text" value="ws://localhost:9001" spellcheck="false" />
+    <button id="ws-connect-btn">Connecter</button>
+    <span style="flex:1"></span>
+    <span style="font-size:11px;color:var(--text-dim);">PICO-RUCHE &nbsp;|&nbsp; Ghost OS v7 HUD</span>
+  </div>
+
+  <!-- ── 3 colonnes ──────────────────────────────────────────────── -->
+  <div id="columns">
+
+    <!-- ──────────── Colonne gauche : Status ──────────────────────── -->
+    <div class="col" id="col-status">
+      <div class="col-header">Status</div>
+      <div class="inner">
+
+        <!-- Badge Ghost OS pulsant -->
+        <div id="ghost-badge">
+          <div class="pulse-ring"><span class="hex">🐝</span></div>
+          <div class="title">GHOST OS v7</div>
+          <div class="sub">PICO-RUCHE · Queen Node</div>
+        </div>
+
+        <!-- Indicateur connexion -->
+        <div id="ws-status-block">
+          <div class="ws-label">WebSocket HUD</div>
+          <div id="ws-indicator">
+            <div id="ws-dot" class="disconnected"></div>
+            <span id="ws-text">Déconnecté</span>
+          </div>
+          <div id="retry-count"></div>
+        </div>
+
+        <!-- Compteurs -->
+        <div class="counters">
+          <div class="counter-row active">
+            <span class="c-label">Missions actives</span>
+            <span class="c-value" id="cnt-active">0</span>
+          </div>
+          <div class="counter-row pending">
+            <span class="c-label">En attente</span>
+            <span class="c-value" id="cnt-pending">0</span>
+          </div>
+          <div class="counter-row done">
+            <span class="c-label">Complétées</span>
+            <span class="c-value" id="cnt-done">0</span>
+          </div>
+        </div>
+
+        <!-- Crédits (affiché si reçus) -->
+        <div id="credits-block">
+          <div class="c-label">Crédits queen</div>
+          <div class="c-value" id="credits-value">—</div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ──────────── Colonne centre : Live Feed ────────────────────── -->
+    <div class="col" id="col-feed">
+      <div id="feed-toolbar">
+        <span class="title">Live Feed</span>
+        <button id="pause-btn">⏸ Pause</button>
+      </div>
+      <div id="feed-list"></div>
+    </div>
+
+    <!-- ──────────── Colonne droite : Mission active ───────────────── -->
+    <div class="col" id="col-mission">
+      <div class="col-header">Mission en cours</div>
+      <div class="inner">
+
+        <!-- Carte mission active -->
+        <div id="active-mission-card">
+          <div id="no-mission">Aucune mission active</div>
+        </div>
+
+        <!-- Historique 5 dernières missions -->
+        <div id="history-section">
+          <div class="h-title">Historique (5 dernières)</div>
+          <div id="hist-list"><span style="font-size:11px;color:var(--text-dim);">Aucune mission terminée</span></div>
+        </div>
+
+      </div>
+    </div>
+
+  </div><!-- /#columns -->
+</div><!-- /#app -->
+
+<script>
+/* ═══════════════════════════════════════════════════════════════════
+   PICO-RUCHE Ghost OS v7 — HUD Dashboard
+   WebSocket client + rendering
+   ═══════════════════════════════════════════════════════════════════ */
+
+// ── État global ────────────────────────────────────────────────────
+const state = {
+  ws:          null,
+  wsUrl:       'ws://localhost:9001',
+  wsStatus:    'disconnected',   // 'connected' | 'disconnected' | 'reconnecting'
+  retryCount:  0,
+  retryTimer:  null,
+  feedPaused:  false,
+  feedEntries: [],               // max 100
+  maxFeed:     100,
+
+  // Compteurs
+  cntActive:   0,
+  cntPending:  0,
+  cntDone:     0,
+
+  // Mission active
+  activeMission: null,
+  /*
+   activeMission = {
+     missionId, command, startTs,
+     totalTasks: 0, doneTasks: 0,
+     steps: [ { text, status: 'pending'|'running'|'ok'|'error' } ]
+   }
+  */
+
+  // Historique
+  history: [],   // max 5, ordre antéchronologique
+};
+
+// ── Refs DOM ───────────────────────────────────────────────────────
+const $wsUrl    = document.getElementById('ws-url-input');
+const $wsBtn    = document.getElementById('ws-connect-btn');
+const $dot      = document.getElementById('ws-dot');
+const $wsText   = document.getElementById('ws-text');
+const $retry    = document.getElementById('retry-count');
+const $pauseBtn = document.getElementById('pause-btn');
+const $feed     = document.getElementById('feed-list');
+const $cntActive  = document.getElementById('cnt-active');
+const $cntPending = document.getElementById('cnt-pending');
+const $cntDone    = document.getElementById('cnt-done');
+const $credits  = document.getElementById('credits-block');
+const $credVal  = document.getElementById('credits-value');
+const $card     = document.getElementById('active-mission-card');
+const $histList = document.getElementById('hist-list');
+
+// ── Utilitaires ────────────────────────────────────────────────────
+function ts() {
+  const d = new Date();
+  return d.toTimeString().slice(0, 8);
+}
+
+function fmtDuration(ms) {
+  if (!ms && ms !== 0) return '—';
+  if (ms < 1000) return ms + 'ms';
+  if (ms < 60000) return (ms / 1000).toFixed(1) + 's';
+  return Math.floor(ms / 60000) + 'm ' + Math.floor((ms % 60000) / 1000) + 's';
+}
+
+function escHtml(str) {
+  return String(str ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// ── Connexion WebSocket ─────────────────────────────────────────────
+function connect(url) {
+  if (state.ws) {
+    try { state.ws.close(); } catch {}
+    state.ws = null;
+  }
+  clearTimeout(state.retryTimer);
+  state.wsUrl = url || state.wsUrl;
+  setWsStatus('reconnecting');
+
+  try {
+    state.ws = new WebSocket(state.wsUrl);
+  } catch (e) {
+    scheduleRetry();
+    return;
+  }
+
+  state.ws.addEventListener('open', () => {
+    state.retryCount = 0;
+    setWsStatus('connected');
+    addFeedEntry({ type: '_sys', text: 'WebSocket connecté à ' + state.wsUrl });
+  });
+
+  state.ws.addEventListener('message', (evt) => {
+    try {
+      const data = JSON.parse(evt.data);
+      handleEvent(data);
+    } catch {}
+  });
+
+  state.ws.addEventListener('close', () => {
+    setWsStatus('disconnected');
+    scheduleRetry();
+  });
+
+  state.ws.addEventListener('error', () => {
+    setWsStatus('disconnected');
+  });
+}
+
+function scheduleRetry() {
+  clearTimeout(state.retryTimer);
+  state.wsStatus = 'reconnecting';
+  renderWsStatus();
+  state.retryCount++;
+  $retry.textContent = `Tentative #${state.retryCount} dans 3s…`;
+  state.retryTimer = setTimeout(() => connect(), 3000);
+}
+
+function setWsStatus(s) {
+  state.wsStatus = s;
+  renderWsStatus();
+}
+
+function renderWsStatus() {
+  $dot.className = '';
+  switch (state.wsStatus) {
+    case 'connected':
+      $dot.classList.add('connected');
+      $wsText.textContent = 'Connecté';
+      $retry.textContent = '';
+      break;
+    case 'reconnecting':
+      $dot.classList.add('reconnecting');
+      $wsText.textContent = 'Reconnexion…';
+      break;
+    default:
+      $dot.classList.add('disconnected');
+      $wsText.textContent = 'Déconnecté';
+      $retry.textContent = '';
+  }
+}
+
+// ── Gestion des events ──────────────────────────────────────────────
+function handleEvent(ev) {
+  if (!ev || !ev.type) return;
+
+  // Batch : dépile chaque event individuellement
+  if (ev.type === 'batch' && Array.isArray(ev.events)) {
+    ev.events.forEach(handleEvent);
+    return;
+  }
+
+  switch (ev.type) {
+
+    case 'mission_start':
+      state.cntActive++;
+      renderCounters();
+      state.activeMission = {
+        missionId:  ev.missionId,
+        command:    ev.command || '(inconnu)',
+        startTs:    ev.ts || Date.now(),
+        totalTasks: 0,
+        doneTasks:  0,
+        steps:      [],
+      };
+      renderActiveMission();
+      addFeedEntry({
+        type: 'mission_start',
+        icon: '🚀',
+        tag:  'MISSION',
+        text: escHtml(ev.command),
+      });
+      break;
+
+    case 'plan_ready':
+      if (state.activeMission) {
+        state.activeMission.totalTasks = ev.tasks || 0;
+      }
+      renderActiveMission();
+      addFeedEntry({
+        type: 'plan_ready',
+        icon: '📋',
+        tag:  'PLAN',
+        text: `${ev.tasks} tâche(s) planifiée(s)`,
+      });
+      break;
+
+    case 'task_start':
+      if (state.activeMission) {
+        state.activeMission.steps.push({ text: ev.task || ev.params || '?', status: 'running' });
+      }
+      renderActiveMission();
+      addFeedEntry({
+        type: 'task_start',
+        icon: '⚙️',
+        tag:  'TASK',
+        text: escHtml(ev.task || ''),
+        extra: ev.params ? '<span style="color:var(--grey)"> · ' + escHtml(JSON.stringify(ev.params)) + '</span>' : '',
+      });
+      break;
+
+    case 'task_done': {
+      const ok = (ev.status === 'ok' || ev.status === undefined);
+      if (state.activeMission) {
+        // Marque la dernière step "running" comme terminée
+        const running = state.activeMission.steps.findLastIndex(s => s.status === 'running');
+        if (running !== -1) state.activeMission.steps[running].status = ok ? 'ok' : 'error';
+        if (ok) state.activeMission.doneTasks++;
+      }
+      renderActiveMission();
+      addFeedEntry({
+        type: ok ? 'task_done_ok' : 'task_done_err',
+        icon: ok ? '✅' : '❌',
+        tag:  ok ? 'OK' : 'ERR',
+        text: escHtml(ev.task || ''),
+        extra: ev.duration ? '<span style="color:var(--text-dim)"> · ' + fmtDuration(ev.duration) + '</span>' : '',
+      });
+      break;
+    }
+
+    case 'thinking':
+      addFeedEntry({
+        type: 'thinking',
+        icon: '🧠',
+        tag:  escHtml(ev.agent || 'AI'),
+        text: escHtml(ev.thought || ''),
+      });
+      break;
+
+    case 'mission_complete': {
+      const dur = fmtDuration(ev.duration);
+      if (state.cntActive > 0) state.cntActive--;
+      state.cntDone++;
+      renderCounters();
+
+      // Archive dans historique
+      if (state.activeMission && state.activeMission.missionId === ev.missionId) {
+        state.history.unshift({
+          command:  state.activeMission.command,
+          duration: dur,
+          status:   'ok',
+        });
+        if (state.history.length > 5) state.history.pop();
+      }
+
+      // Réinitialise la mission active si c'est bien celle-là
+      if (!state.activeMission || state.activeMission.missionId === ev.missionId) {
+        state.activeMission = null;
+      }
+      renderActiveMission();
+      renderHistory();
+      addFeedEntry({
+        type: 'mission_complete',
+        icon: '🏁',
+        tag:  'DONE',
+        text: 'Mission complétée en <b>' + dur + '</b>',
+      });
+      break;
+    }
+
+    case 'mission_error': {
+      if (state.cntActive > 0) state.cntActive--;
+      renderCounters();
+      if (state.activeMission && state.activeMission.missionId === ev.missionId) {
+        state.history.unshift({
+          command:  state.activeMission.command,
+          duration: '—',
+          status:   'error',
+        });
+        if (state.history.length > 5) state.history.pop();
+        state.activeMission = null;
+      }
+      renderActiveMission();
+      renderHistory();
+      addFeedEntry({
+        type: 'error',
+        icon: '💥',
+        tag:  'ERROR',
+        text: escHtml(ev.error || 'Erreur inconnue'),
+      });
+      break;
+    }
+
+    case 'queue_update':
+      state.cntPending = ev.pending ?? state.cntPending;
+      state.cntActive  = ev.running ?? state.cntActive;
+      renderCounters();
+      addFeedEntry({
+        type: 'queue_update',
+        icon: '📊',
+        tag:  'QUEUE',
+        text: `En attente : <b>${ev.pending ?? '?'}</b> · En cours : <b>${ev.running ?? '?'}</b>`,
+      });
+      break;
+
+    case 'credits':
+      $credits.style.display = 'block';
+      $credVal.textContent = ev.value ?? ev.credits ?? '?';
+      break;
+
+    default:
+      addFeedEntry({
+        type: 'default',
+        icon: '•',
+        tag:  escHtml(ev.type),
+        text: escHtml(JSON.stringify(ev)).slice(0, 200),
+      });
+  }
+}
+
+// ── Rendu : Feed ───────────────────────────────────────────────────
+function addFeedEntry({ type, icon = '•', tag = '', text = '', extra = '' }) {
+  // Normalise le type pour les classes CSS
+  const cls = {
+    mission_start:    'fe-mission-start',
+    plan_ready:       'fe-plan-ready',
+    task_start:       'fe-task-start',
+    task_done_ok:     'fe-task-done-ok',
+    task_done_err:    'fe-task-done-err',
+    thinking:         'fe-thinking',
+    mission_complete: 'fe-mission-complete',
+    queue_update:     'fe-queue-update',
+    error:            'fe-error',
+    _sys:             'fe-default',
+  }[type] || 'fe-default';
+
+  const entry = { cls, icon, tag, text, extra, time: ts() };
+  state.feedEntries.push(entry);
+  if (state.feedEntries.length > state.maxFeed) state.feedEntries.shift();
+
+  if (state.feedPaused) return;
+  appendFeedEntry(entry);
+}
+
+function appendFeedEntry({ cls, icon, tag, text, extra, time }) {
+  const el = document.createElement('div');
+  el.className = `feed-entry ${cls}`;
+  el.innerHTML =
+    `<span class="fe-icon">${icon}</span>` +
+    `<span class="fe-time">${time}</span>` +
+    `<span class="fe-content">` +
+      (tag ? `<span class="fe-tag">${tag}</span>` : '') +
+      text +
+      (extra || '') +
+    `</span>`;
+  $feed.appendChild(el);
+
+  // Limite à 100 éléments DOM
+  while ($feed.children.length > state.maxFeed) {
+    $feed.removeChild($feed.firstChild);
+  }
+
+  // Auto-scroll vers le bas
+  $feed.scrollTop = $feed.scrollHeight;
+}
+
+function renderFeedFromState() {
+  $feed.innerHTML = '';
+  state.feedEntries.forEach(appendFeedEntry);
+}
+
+// ── Rendu : Compteurs ──────────────────────────────────────────────
+function renderCounters() {
+  $cntActive.textContent  = state.cntActive;
+  $cntPending.textContent = state.cntPending;
+  $cntDone.textContent    = state.cntDone;
+}
+
+// ── Rendu : Mission active ─────────────────────────────────────────
+let _missionTimerInterval = null;
+
+function renderActiveMission() {
+  clearInterval(_missionTimerInterval);
+  const m = state.activeMission;
+
+  if (!m) {
+    $card.innerHTML = '<div id="no-mission">Aucune mission active</div>';
+    return;
+  }
+
+  // Timer dynamique
+  function renderTimer() {
+    const elapsed = Date.now() - (m.startTs || Date.now());
+    const el = document.getElementById('am-timer-val');
+    if (el) el.textContent = fmtDuration(elapsed);
+  }
+
+  const pct = m.totalTasks > 0
+    ? Math.round((m.doneTasks / m.totalTasks) * 100)
+    : 0;
+
+  const stepsHtml = m.steps.length === 0
+    ? '<div style="color:var(--text-dim);font-size:11px;">Aucune tâche démarrée</div>'
+    : m.steps.map(s => {
+        const icons = { pending: '○', running: '◉', ok: '●', error: '✕' };
+        return `<div class="step-item ${s.status}">
+          <span class="step-icon">${icons[s.status] || '○'}</span>
+          <span class="step-text">${escHtml(s.text)}</span>
+        </div>`;
+      }).join('');
+
+  $card.innerHTML = `
+    <div class="am-header">
+      <span class="am-badge">▶ EN COURS</span>
+      <span class="am-timer" id="am-timer-val">${fmtDuration(Date.now() - m.startTs)}</span>
+    </div>
+    <div class="am-command">${escHtml(m.command)}</div>
+    <div class="progress-wrap">
+      <div class="progress-label">
+        <span>Tâches</span>
+        <span>${m.doneTasks} / ${m.totalTasks || '?'} &nbsp; (${pct}%)</span>
+      </div>
+      <div class="progress-bar-bg">
+        <div class="progress-bar-fill" style="width:${pct}%"></div>
+      </div>
+    </div>
+    <div class="steps-list">${stepsHtml}</div>
+  `;
+
+  _missionTimerInterval = setInterval(renderTimer, 500);
+}
+
+// ── Rendu : Historique ─────────────────────────────────────────────
+function renderHistory() {
+  if (state.history.length === 0) {
+    $histList.innerHTML = '<span style="font-size:11px;color:var(--text-dim);">Aucune mission terminée</span>';
+    return;
+  }
+  $histList.innerHTML = state.history.map(h => `
+    <div class="hist-item">
+      <div class="hi-cmd">${escHtml(h.command)}</div>
+      <div class="hi-meta">
+        <span class="hi-status ${h.status}">${h.status === 'ok' ? '✅ OK' : '❌ Erreur'}</span>
+        <span>${h.duration}</span>
+      </div>
+    </div>
+  `).join('');
+}
+
+// ── Bouton Pause/Resume ────────────────────────────────────────────
+$pauseBtn.addEventListener('click', () => {
+  state.feedPaused = !state.feedPaused;
+  $pauseBtn.textContent = state.feedPaused ? '▶ Resume' : '⏸ Pause';
+  $pauseBtn.classList.toggle('paused', state.feedPaused);
+  if (!state.feedPaused) renderFeedFromState();
+});
+
+// ── Bouton Connecter ───────────────────────────────────────────────
+$wsBtn.addEventListener('click', () => {
+  const url = $wsUrl.value.trim();
+  if (!url) return;
+  clearTimeout(state.retryTimer);
+  state.retryCount = 0;
+  connect(url);
+});
+
+$wsUrl.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') $wsBtn.click();
+});
+
+// ── Init ───────────────────────────────────────────────────────────
+renderCounters();
+renderActiveMission();
+renderHistory();
+connect();   // Connexion automatique au démarrage
+</script>
+</body>
+</html>

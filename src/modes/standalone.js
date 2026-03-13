@@ -11,6 +11,8 @@ import { Hono } from "hono";
 import { serve } from "@hono/node-server";
 import { createMissionsRoutes } from "../api/missions.js";
 import { createMcpRoutes } from "../api/mcp_routes.js";
+import { createMutationsRoutes } from "../api/mutations.js";
+import { startCoeusLoop } from "../agents/coeus.js";
 
 /**
  * Lance le serveur API standalone
@@ -48,6 +50,7 @@ export function startStandaloneServer(deps) {
   // ─── Routes MCP ─────────────────────────────────────────────────────────────
   // Endpoints directs vers les modules MCP Node.js (os-control, terminal, etc.)
   createMcpRoutes(app);
+  createMutationsRoutes(app);
 
   // ─── Route racine ───────────────────────────────────────────────────────────
   app.get("/", (c) =>
@@ -107,6 +110,10 @@ export function startStandaloneServer(deps) {
         "POST /mcp/rollback",
         "POST /mcp/skill-factory",
         "POST /mcp/janitor",
+        "GET  /api/mutations/suggested",
+        "POST /api/mutations/suggested",
+        "GET  /api/mutations/stats",
+        "POST /api/mutations/audit",
       ],
     })
   );
@@ -119,6 +126,8 @@ export function startStandaloneServer(deps) {
     logger.info(`🌐 API Standalone: http://localhost:${port}`);
     logger.info(`📖 Endpoints: http://localhost:${port}/`);
   });
+
+  startCoeusLoop();
 
   return { app, server };
 }

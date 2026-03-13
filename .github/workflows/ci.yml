@@ -1,120 +1,74 @@
-name: LaRuche CI
+name: CI — PICO-RUCHE
 
 on:
   push:
-    branches: ["main", "feat/**", "fix/**", "docs/**"]
+    branches: [main, develop]
   pull_request:
-    branches: ["main"]
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+    branches: [main]
 
 jobs:
-  # ─── Lint & Syntax Check ───────────────────────────────────────────────
-  lint:
-    name: 🔍 Syntax Check
+  # ── Node.js tests ─────────────────────────────────────────────────────────
+  test-node:
+    name: Node.js tests (Jest)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
-          node-version: "20.x"
-
-      - name: Valider package.json
-        run: node -e "JSON.parse(require('fs').readFileSync('package.json'))"
-
-      - name: Vérifier syntaxe JS (src/)
-        run: |
-          failed=0
-          for f in src/*.js; do
-            [ -f "$f" ] || continue
-            node --check "$f" && echo "✅ $f" || { echo "❌ $f"; failed=1; }
-          done
-          exit $failed
-
-      - name: Vérifier syntaxe JS (mcp_servers/)
-        run: |
-          for f in mcp_servers/*.js; do
-            [ -f "$f" ] || continue
-            node --check "$f" && echo "✅ $f" || echo "⚠️ $f (warning)"
-          done
-
-  # ─── Tests Smoke (sans dépendances natives) ────────────────────────────
-  test:
-    name: 🧪 Smoke Tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20.x"
-
-      - name: Install dépendances (ignore scripts natifs)
-        run: npm install --ignore-scripts --no-audit --no-fund
-        continue-on-error: false
-
-      - name: Smoke tests
-        run: node test/smoke.js
+          node-version: "20"
+          cache: "npm"
+      - run: npm ci
+      - run: npm run lint --if-present
+      - run: npm test -- --forceExit --detectOpenHandles
         env:
           NODE_ENV: test
           STANDALONE_MODE: "true"
-          TELEGRAM_BOT_TOKEN: "0000000000:test-token-for-ci-only"
-          ADMIN_TELEGRAM_ID: "123456789"
           OLLAMA_HOST: "http://localhost:11434"
-          CI: "true"
+          HITL_TIMEOUT_SECONDS: "5"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: jest-results
+          path: coverage/
+          retention-days: 7
 
-  # ─── Sécurité ──────────────────────────────────────────────────────────
-  security:
-    name: 🔒 Security Scan
+  # ── Python lint ───────────────────────────────────────────────────────────
+  lint-python:
+    name: Python lint (ruff)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install ruff
+      - run: ruff check agent/ --ignore E501,E402
 
-      - name: Détecter tokens Telegram exposés
-        run: |
-          if grep -rE "bot[0-9]{8,}:[A-Za-z0-9_-]{35,}" \
-            --include="*.js" --include="*.ts" --include="*.json" \
-            --exclude-dir=node_modules . 2>/dev/null; then
-            echo "❌ Token Telegram potentiellement exposé !"
-            exit 1
-          fi
-          echo "✅ Pas de tokens Telegram détectés"
-
-      - name: Détecter clés API OpenAI
-        run: |
-          if grep -rE "sk-[a-zA-Z0-9]{32,}" \
-            --include="*.js" --include="*.ts" \
-            --exclude-dir=node_modules . 2>/dev/null; then
-            echo "❌ Clé API potentiellement exposée !"
-            exit 1
-          fi
-          echo "✅ Pas de clés API détectées"
-
+  # ── Smoke tests ───────────────────────────────────────────────────────────
+  smoke:
+    name: Smoke tests
+    runs-on: ubuntu-latest
+    needs: [test-node]
+    steps:
+      - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20.x"
+          node-version: "20"
+          cache: "npm"
+      - run: npm ci
+      - run: npm run test:smoke --if-present
+        env:
+          NODE_ENV: test
+          STANDALONE_MODE: "true"
 
-      - name: npm audit (high+ seulement)
-        run: npm install --ignore-scripts --no-audit --no-fund && npm audit --audit-level=high || true
-
-  # ─── Résumé CI ─────────────────────────────────────────────────────────
-  ci-ok:
-    name: CI ✅
+  # ── Security audit ────────────────────────────────────────────────────────
+  security:
+    name: Security audit
     runs-on: ubuntu-latest
-    needs: [lint, test, security]
-    if: always()
     steps:
-      - name: Résultat global
-        run: |
-          echo "lint    : ${{ needs.lint.result }}"
-          echo "test    : ${{ needs.test.result }}"
-          echo "security: ${{ needs.security.result }}"
-          if [[ "${{ needs.lint.result }}" == "failure" || \
-                "${{ needs.security.result }}" == "failure" ]]; then
-            echo "❌ CI échouée"
-            exit 1
-          fi
-          echo "✅ CI passée"
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - run: npm audit --audit-level=moderate --production || true

@@ -11,9 +11,13 @@
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { existsSync } from 'fs';
+import { initAgent, deductCredits, CREDIT_PER_SKILL } from '../market/creditSystem.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '../..');
+
+// Initialisation de l'agent queen au démarrage du module
+initAgent('queen');
 
 // Timeouts par skill (ms)
 const SKILL_TIMEOUTS = {
@@ -59,6 +63,35 @@ const FALLBACKS = {
     execSync(`open "${url}"`, { timeout: 5000 });
     return { success: true, url, message: 'Opened via default browser' };
   },
+  type_text: async ({ text }) => {
+    // Fallback : pbcopy + AppleScript paste (évite les problèmes unicode avec osascript)
+    const { execSync } = await import('child_process');
+    execSync(`echo ${JSON.stringify(text)} | pbcopy && osascript -e 'tell app "System Events" to keystroke "v" using command down'`, { timeout: 4000 });
+    return { success: true, text, message: 'Typed via clipboard fallback' };
+  },
+  press_key: async ({ key }) => {
+    // Fallback : AppleScript keystroke direct
+    const { execSync } = await import('child_process');
+    execSync(`osascript -e 'tell app "System Events" to keystroke "${key}"'`, { timeout: 3000 });
+    return { success: true, key, message: 'Key pressed via AppleScript fallback' };
+  },
+  press_enter: async () => {
+    const { execSync } = await import('child_process');
+    execSync(`osascript -e 'tell app "System Events" to key code 36'`, { timeout: 3000 });
+    return { success: true, message: 'Enter via AppleScript fallback' };
+  },
+  run_command: async ({ command }) => {
+    // Fallback : execSync direct (si terminal_mcp non disponible)
+    const { execSync } = await import('child_process');
+    const out = execSync(command, { timeout: 10000, encoding: 'utf8' });
+    return { success: true, output: out, message: 'Command via direct fallback' };
+  },
+  http_fetch: async ({ url }) => {
+    // Fallback : curl si skill http_fetch échoue
+    const { execSync } = await import('child_process');
+    const out = execSync(`curl -s --max-time 10 "${url}"`, { timeout: 12000, encoding: 'utf8' });
+    return { success: true, body: out, message: 'Fetched via curl fallback' };
+  },
 };
 
 // Cache des skill handlers importés
@@ -76,7 +109,7 @@ async function loadSkill(skillName) {
   if (!skillPath) return null;
 
   try {
-    const mod = await import(`${skillPath}?t=${Date.now()}`);
+    const mod = await import(skillPath);
     const handler = typeof mod.run === 'function' ? mod.run : null;
     _skillCache.set(skillName, handler);
     return handler;
@@ -199,6 +232,11 @@ export async function executeSequence(steps, { hudFn, stopOnError = false } = {}
 
     const result = await executeStep(step, { hudFn });
     results.push({ step, ...result });
+
+    // Déduction des crédits de l'agent queen après chaque skill réussi
+    if (result.success) {
+      deductCredits('queen', CREDIT_PER_SKILL);
+    }
 
     if (!result.success && stopOnError) break;
 

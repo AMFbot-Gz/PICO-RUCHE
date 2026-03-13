@@ -1,1 +1,42 @@
-{}
+{
+  "system": {
+    "cpu_percent": 62,
+    "ram_used_gb": 9.1,
+    "ram_total_gb": 16,
+    "ram_percent": 56.9,
+    "disk_used_gb": 185,
+    "disk_free_gb": 115,
+    "processes": [
+      {
+        "pid": 1234,
+        "name": "Safari",
+        "cpu_percent": 5.1,
+        "memory_percent": 2
+      }
+    ]
+  },
+  "updated_at": "2026-03-13T05:26:54.601332+00:00",
+  "active_app": {
+    "name": "Terminal",
+    "window_title": null,
+    "changed_at": "2026-03-13T05:26:54.601318+00:00"
+  },
+  "element_cache": {
+    "Safari:main:bouton lecture": {
+      "x": 640,
+      "y": 400,
+      "valid": false,
+      "cached_at": "2026-03-13T05:26:54.600338+00:00"
+    }
+  },
+  "previous_app": {
+    "name": "Safari"
+  },
+  "agent_market": {
+    "credits": {
+      "test_integration_agent_1773380276254": 490,
+      "queen": 1000
+    },
+    "last_updated": "2026-03-13T05:53:05.404Z"
+  }
+}

@@ -109,6 +109,45 @@ def check_ollama() -> bool:
         return False
 
 
+def warmup_ollama():
+    """Pré-charge les modèles Ollama pour éviter le cold-start de 3-5s sur la première requête."""
+    models_to_warmup = ["llama3.2:3b", "nomic-embed-text", "llama3:latest"]
+    ollama_url = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+
+    print("🔥 Warmup Ollama en cours...")
+    for model in models_to_warmup:
+        try:
+            # Ping minimal : génère 1 token pour forcer le chargement en RAM
+            httpx.post(
+                f"{ollama_url}/api/generate",
+                json={"model": model, "prompt": "hi", "stream": False, "options": {"num_predict": 1}},
+                timeout=30,
+            )
+            print(f"  ✅ {model} chargé")
+        except Exception as e:
+            print(f"  ⚠️  {model} non disponible: {e}")
+    print("🔥 Warmup terminé\n")
+
+
+def check_ollama_ready(host: str = "http://localhost:11434", timeout: int = 30) -> bool:
+    """Attend qu'Ollama soit prêt (max timeout secondes).
+    Utilisé juste avant le lancement de Brain pour confirmer que les modèles
+    sont bien disponibles et pas seulement que le démon est en train de démarrer."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            r = httpx.get(f"{host}/api/tags", timeout=3)
+            if r.status_code == 200:
+                models = [m["name"] for m in r.json().get("models", [])]
+                print(f"  ✅ Ollama prêt — {len(models)} modèles disponibles")
+                return True
+        except Exception:
+            pass
+        time.sleep(2)
+    print(f"  ❌ Ollama non disponible après {timeout}s")
+    return False
+
+
 def check_health(port: int, retries: int = HEALTH_RETRIES) -> tuple[bool, float]:
     """
     Tente retries fois d'appeler /health sur le port donné.
@@ -211,7 +250,10 @@ def main():
     print("✅ actif")
     print()
 
-    # 2. Démarrer les couches dans l'ordre
+    # 2. Pré-charger les modèles Ollama en RAM avant le démarrage des couches
+    warmup_ollama()
+
+    # 3. Démarrer les couches dans l'ordre
     layer_status: dict[str, dict] = {}
 
     for layer in LAYERS:
@@ -219,6 +261,16 @@ def main():
         port = layer["port"]
         desc = layer["desc"]
         emoji = layer["emoji"]
+
+        # Avant Brain : confirmation que les modèles Ollama sont vraiment disponibles.
+        # Si Ollama ne répond pas dans le délai, on avertit mais on continue
+        # (Brain pourra démarrer en mode dégradé ou retenter plus tard).
+        if name == "Brain":
+            print("  🔍 Vérification warmup Ollama (modèles)... ", end="", flush=True)
+            if not check_ollama_ready(timeout=30):
+                print("  ⚠️  Ollama warmup incomplet — Brain démarré sans garantie de modèles")
+            else:
+                pass  # message déjà affiché par check_ollama_ready
 
         print(f"  {emoji} Démarrage {name:<12} :{port}  {desc} ... ", end="", flush=True)
         try:
@@ -239,7 +291,7 @@ def main():
             print(f"❌  ({exc})")
             layer_status[name] = {"ok": False, "latency": 0, "port": port, "desc": desc, "error": str(exc)}
 
-    # 3. Tableau de bord ASCII
+    # 4. Tableau de bord ASCII
     print()
     print(bar)
     print("🐝 PICO-RUCHE v1.0 — Tableau de bord")

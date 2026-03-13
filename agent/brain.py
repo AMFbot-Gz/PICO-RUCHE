@@ -1,7 +1,9 @@
 """
 Couche cerveau — port 8003
-MLX ou Ollama · routing modèles · compression contexte · planification
+Claude API · MLX · Ollama · routing modèles · compression contexte · planification
+Chaîne de fallback : Claude (claude-opus-4-6) → MLX → Ollama → Kimi
 """
+import asyncio
 import httpx
 import json
 import os
@@ -15,7 +17,9 @@ import yaml
 from dotenv import load_dotenv
 load_dotenv()
 
-with open("agent_config.yml") as f:
+ROOT = Path(__file__).resolve().parent.parent
+
+with open(ROOT / "agent_config.yml") as f:
     CONFIG = yaml.safe_load(f)
 
 app = FastAPI(title="PICO-RUCHE Brain", version="1.0.0")
@@ -24,6 +28,12 @@ OLLAMA_URL = CONFIG["ollama"]["base_url"]
 MLX_URL = CONFIG["mlx"]["server_url"]
 MODELS = CONFIG["ollama"]["models"]
 COMPRESS_THRESHOLD = CONFIG["brain"]["compress_threshold"]
+CLAUDE_MODEL = "claude-opus-4-6"
+
+
+def claude_available() -> bool:
+    """Vérifie si ANTHROPIC_API_KEY est présente et non vide."""
+    return bool(os.environ.get("ANTHROPIC_API_KEY", "").strip())
 
 
 def mlx_available() -> bool:
@@ -62,6 +72,26 @@ async def call_mlx(messages: list, system: str = "") -> str:
         return r.json()["choices"][0]["message"]["content"]
 
 
+async def call_claude(messages: list, system: str = "") -> str:
+    """Appelle Claude API (claude-opus-4-6) avec adaptive thinking."""
+    import anthropic
+    key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not key:
+        raise ValueError("ANTHROPIC_API_KEY absent")
+    client = anthropic.AsyncAnthropic(api_key=key)
+    kwargs = {
+        "model": CLAUDE_MODEL,
+        "max_tokens": 4096,
+        "messages": messages,
+        "thinking": {"type": "adaptive"},
+    }
+    if system:
+        kwargs["system"] = system
+    response = await client.messages.create(**kwargs)
+    # Extraire uniquement les blocs texte (ignorer les blocs thinking)
+    return next((b.text for b in response.content if b.type == "text"), "")
+
+
 async def call_kimi(messages: list, system: str = "") -> str:
     key = os.environ.get("KIMI_API_KEY", "")
     if not key:
@@ -81,45 +111,126 @@ async def call_kimi(messages: list, system: str = "") -> str:
 
 
 async def llm(role: str, messages: list, system: str = "") -> dict:
+    """
+    Routing LLM avec chaîne de fallback :
+    strategist → Claude (claude-opus-4-6) → MLX → Ollama → Kimi
+    autres rôles → Ollama → Kimi
+    """
     model = MODELS.get(role, MODELS["worker"])
+
+    # 1. Claude API — priorité absolue pour le stratège (meilleure qualité de planification)
+    if role == "strategist" and claude_available():
+        try:
+            content = await call_claude(messages, system)
+            return {"content": content, "provider": "claude", "model": CLAUDE_MODEL}
+        except Exception as e:
+            print(f"[Brain] Claude failed: {e} → MLX/Ollama")
+
+    # 2. MLX — GPU local Apple Silicon (stratège uniquement)
     if role == "strategist" and mlx_available():
         try:
             content = await call_mlx(messages, system)
             return {"content": content, "provider": "mlx", "model": "qwen3-mlx"}
         except Exception as e:
             print(f"[Brain] MLX failed: {e} → Ollama")
+
+    # 3. Ollama — LLM local par défaut
     try:
         content = await call_ollama(model, messages, system)
         return {"content": content, "provider": "ollama", "model": model}
     except Exception as e:
         print(f"[Brain] Ollama failed: {e}")
-        # Fallback Kimi uniquement si la clé est présente
+        # 4. Kimi — cloud uniquement si la clé est présente
         if os.environ.get("KIMI_API_KEY"):
             try:
                 content = await call_kimi(messages, system)
                 return {"content": content, "provider": "kimi", "model": "moonshot-v1-8k"}
             except Exception as e2:
-                raise RuntimeError(f"Ollama + Kimi ont échoué: {e2}")
-        raise RuntimeError(f"Ollama failed (pas de fallback cloud): {e}")
+                raise RuntimeError(f"Tous les providers ont échoué (Ollama + Kimi): {e2}")
+        raise RuntimeError(f"Ollama failed (aucun fallback cloud disponible): {e}")
 
 
 async def compress_context(messages: list) -> str:
     history = "\n".join([f"{m['role']}: {m['content']}" for m in messages])
-    result = await call_ollama(MODELS["compressor"], [
-        {"role": "user", "content": f"Résume en moins de 400 tokens. Garde: décisions, erreurs, état actuel, prochaine étape. Supprime: répétitions, politesses.\n\n{history}"}
-    ])
-    return result
+    prompt = [{"role": "user", "content": f"Résume en moins de 400 tokens. Garde: décisions, erreurs, état actuel, prochaine étape. Supprime: répétitions, politesses.\n\n{history}"}]
+
+    for attempt in range(3):
+        try:
+            result = await call_ollama(MODELS["compressor"], prompt)
+            return result
+        except Exception as e:
+            if attempt < 2:
+                print(f"[Brain] compress_context retry {attempt+1}: {e}")
+                await asyncio.sleep(2 ** attempt)
+            else:
+                # Fallback: retourner une troncature simple
+                print(f"[Brain] compress_context failed after 3 attempts: {e}")
+                return history[-2000:]  # Garde les 2000 derniers chars
 
 
 def load_domain_context(mission_type: str) -> str:
-    ctx_file = Path(f"support/domain-contexts/{mission_type}.md")
-    mem_file = Path("agent/memory/persistent.md")
+    ctx_file = ROOT / f"support/domain-contexts/{mission_type}.md"
+    mem_file = ROOT / "agent/memory/persistent.md"
     ctx = ""
     if ctx_file.exists():
         ctx += ctx_file.read_text()
     if mem_file.exists():
         ctx += "\n\n" + mem_file.read_text()[-2000:]
     return ctx
+
+
+def load_skills_list() -> str:
+    """Charge les skills disponibles depuis registry.json pour guider la planification (C1)."""
+    try:
+        registry_path = ROOT / "skills/registry.json"
+        if not registry_path.exists():
+            return ""
+        registry = json.loads(registry_path.read_text(encoding="utf-8"))
+        skills = registry.get("skills", [])
+        if not skills:
+            return ""
+        lines = ["Skills disponibles (tu peux les référencer dans tes sous-tâches):"]
+        for s in skills[:20]:
+            lines.append(f"  - {s['name']}: {s.get('description', '')[:80]}")
+        return "\n".join(lines)
+    except Exception:
+        return ""
+
+
+async def _async_load_domain_context(mission_type: str) -> str:
+    try:
+        return await asyncio.get_event_loop().run_in_executor(None, load_domain_context, mission_type)
+    except Exception as e:
+        print(f"[Brain] load_domain_context error: {e}")
+        return ""
+
+
+async def _async_load_skills_list() -> str:
+    try:
+        return await asyncio.get_event_loop().run_in_executor(None, load_skills_list)
+    except Exception as e:
+        print(f"[Brain] load_skills_list error: {e}")
+        return ""
+
+
+async def load_recent_learnings() -> str:
+    """Charge les 3 derniers épisodes mémoire pour éviter de répéter les erreurs (C1)."""
+    try:
+        async with httpx.AsyncClient(timeout=3) as c:
+            r = await c.get(f"http://localhost:{CONFIG['ports']['memory']}/episodes?limit=3")
+            r.raise_for_status()
+            episodes = r.json().get("episodes", [])
+        if not episodes:
+            return ""
+        lines = ["Apprentissages récents (prends-les en compte):"]
+        for ep in episodes:
+            flag = "✓" if ep.get("success") else "✗"
+            mission_short = ep.get("mission", "")[:70]
+            result_short = ep.get("result", "")[:80]
+            lines.append(f"  {flag} {mission_short} → {result_short}")
+        return "\n".join(lines)
+    except Exception:
+        return ""
 
 
 class ThinkRequest(BaseModel):
@@ -141,13 +252,67 @@ async def think(req: ThinkRequest):
         print(f"[Brain] Contexte > {COMPRESS_THRESHOLD} tokens → compression")
         compressed = await compress_context(messages)
         messages = [{"role": "assistant", "content": f"[Contexte résumé]: {compressed}"}]
-    domain_ctx = load_domain_context(req.mission_type)
+
+    # C1 — contexte enrichi : domain + skills + mémoire récente (en parallèle)
+    domain_ctx, skills_ctx, learnings_ctx = await asyncio.gather(
+        _async_load_domain_context(req.mission_type),
+        _async_load_skills_list(),
+        load_recent_learnings(),
+        return_exceptions=True,
+    )
+    domain_ctx   = domain_ctx   if isinstance(domain_ctx, str)   else ""
+    skills_ctx   = skills_ctx   if isinstance(skills_ctx, str)   else ""
+    learnings_ctx = learnings_ctx if isinstance(learnings_ctx, str) else ""
+
+    context_blocks = []
+    if domain_ctx:
+        context_blocks.append(f"### Contexte domaine\n{domain_ctx[:800]}")
+    if skills_ctx:
+        context_blocks.append(skills_ctx)
+    if learnings_ctx:
+        context_blocks.append(learnings_ctx)
+    extra_context = "\n\n".join(context_blocks)
+
     system_prompt = f"""Tu es le cerveau de PICO-RUCHE (Ghost OS v5.0.0).
-Tu analyses la situation et décomposes la mission en sous-tâches atomiques.
-Maximum {CONFIG['brain']['max_subtasks']} sous-tâches. Réponds UNIQUEMENT en JSON valide.
-Format: {{"goal": "string", "subtasks": [{{"id": "1", "role": "shell|vision|worker|strategist", "instruction": "string", "risk": "low|medium|high"}}], "reasoning": "string", "estimated_duration": "Xs"}}
-Les niveaux de risque: low=action sûre et réversible, medium=modification système, high=suppression ou changement critique.
-{f"Contexte domaine:{chr(10)}{domain_ctx[:1000]}" if domain_ctx else ""}"""
+Tu analyses la mission et la décomposes en sous-tâches atomiques parallélisables.
+Maximum {CONFIG['brain']['max_subtasks']} sous-tâches. Réponds UNIQUEMENT en JSON valide sans markdown.
+
+## Format de réponse requis
+
+{{
+  "goal": "description concise de l'objectif",
+  "subtasks": [
+    {{
+      "id": "1",
+      "role": "shell|vision|worker|strategist",
+      "instruction": "instruction précise et auto-suffisante",
+      "risk": "low|medium|high",
+      "confidence": 0.85,
+      "depends_on": [],
+      "rollback": "comment annuler si ça échoue"
+    }}
+  ],
+  "reasoning": "pourquoi cette décomposition",
+  "estimated_duration": "Xs",
+  "parallelizable": true
+}}
+
+## Règles de décomposition
+
+- **low**: action sûre et réversible (lecture, affichage, status)
+- **medium**: modification système (écriture fichier, installation)
+- **high**: suppression ou changement critique (rm, format, shutdown) → HITL obligatoire
+- **confidence**: 0.0–1.0 (ta certitude que cette sous-tâche va réussir)
+- **depends_on**: IDs des sous-tâches qui doivent terminer avant celle-ci ([] = parallélisable)
+- **rollback**: étape concrète pour annuler si la sous-tâche échoue
+
+## Rôles disponibles
+
+- **shell**: commande terminal via executor sandboxé
+- **vision**: capture + analyse visuelle de l'écran
+- **worker**: tâche de réflexion/génération via LLM
+- **strategist**: planification ou analyse complexe via LLM haute qualité
+{f"{chr(10)}{extra_context}" if extra_context else ""}"""
     messages.append({"role": "user", "content": req.mission})
     result = await llm(req.role, messages, system_prompt)
     raw_content = result["content"].strip()
@@ -215,7 +380,21 @@ async def raw_llm(req: dict):
 @app.get("/health")
 async def health():
     mlx_ok = mlx_available()
-    return {"status": "ok", "layer": "brain", "mlx": mlx_ok, "ollama": OLLAMA_URL, "models": MODELS}
+    claude_ok = claude_available()
+    active_provider = "claude" if claude_ok else ("mlx" if mlx_ok else "ollama")
+    return {
+        "status": "ok",
+        "layer": "brain",
+        "active_provider": active_provider,
+        "providers": {
+            "claude": claude_ok,
+            "mlx": mlx_ok,
+            "ollama": OLLAMA_URL,
+            "kimi": bool(os.environ.get("KIMI_API_KEY")),
+        },
+        "models": MODELS,
+        "claude_model": CLAUDE_MODEL if claude_ok else None,
+    }
 
 
 if __name__ == "__main__":

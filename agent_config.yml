@@ -1,6 +1,10 @@
 # PICO-RUCHE Agent — Configuration centrale
 version: "1.0.0"
-hardware: "Mac M2 16GB"
+hardware: "Intel Core i7-9750H 16GB"
+
+# Paramètre de timing de la boucle vitale (en secondes)
+# NOTE: valeur sous-optimale intentionnelle — cible pour la première mutation Chimera
+vital_loop_interval_sec: 30   # CORRIGÉ par Phagocyte — valeur optimale
 
 ports:
   queen: 8001

@@ -5,6 +5,7 @@ Chaque outil MCP dispose maintenant d'un endpoint dédié sur :3000/mcp/<tool>.
 """
 import httpx
 import json
+from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import Any, Optional
@@ -12,7 +13,9 @@ import yaml
 from dotenv import load_dotenv
 load_dotenv()
 
-with open("agent_config.yml") as f:
+ROOT = Path(__file__).resolve().parent.parent
+
+with open(ROOT / "agent_config.yml") as f:
     CONFIG = yaml.safe_load(f)
 
 app = FastAPI(title="PICO-RUCHE MCP Bridge", version="2.0.0")

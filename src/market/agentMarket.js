@@ -9,6 +9,15 @@
 
 import { runAuction } from './auctionEngine.js';
 import { recordOutcome, getAllScores } from './reputationSystem.js';
+import {
+  initAgent,
+  getCredits,
+  deductCredits,
+  addCredits,
+  resetCredits,
+  canExecute,
+  CREDIT_PER_SKILL,
+} from './creditSystem.js';
 
 /** @type {Map<string, Object>} id → config agent */
 const REGISTERED_AGENTS = new Map();
@@ -28,6 +37,8 @@ const REGISTERED_AGENTS = new Map();
 export function registerAgent(config) {
   if (!config?.id) throw new Error('registerAgent: config.id requis');
   REGISTERED_AGENTS.set(config.id, config);
+  // Initialisation des crédits (idempotent : ne réinitialise pas si déjà existant)
+  initAgent(config.id);
 }
 
 /**
@@ -57,12 +68,21 @@ export async function dispatchWithAuction(task, opts = {}) {
   const auction = runAuction(task, candidates);
   const winner = auction.winner;
 
+  // Vérification des crédits avant exécution
+  if (!canExecute(winner.id)) {
+    return { success: false, error: 'INSUFFICIENT_CREDITS', agentId: winner.id };
+  }
+
   const t = Date.now();
   let success = false;
 
   try {
     const result = await opts.runFn(winner.id, task);
     success = result?.success !== false;
+    // Déduction des crédits après exécution réussie
+    if (success) {
+      deductCredits(winner.id, CREDIT_PER_SKILL);
+    }
     return { ...result, winnerId: winner.id, auction };
   } catch (e) {
     return { success: false, error: e.message, winnerId: winner.id };
@@ -82,3 +102,4 @@ export function marketStats() {
 }
 
 export { getAllScores as getReputations };
+export { getCredits, addCredits, resetCredits };
