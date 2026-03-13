@@ -1,7 +1,7 @@
 """
 Couche cerveau — port 8003
 Claude API · MLX · Ollama · routing modèles · compression contexte · planification
-Chaîne de fallback : Claude (claude-opus-4-6) → MLX → Ollama → Kimi → OpenAI
+Provider : Claude API (claude-opus-4-6) · Fallback cloud : Kimi → OpenAI
 """
 import asyncio
 import httpx
@@ -135,74 +135,46 @@ async def call_openai(messages: list, system: str = "") -> str:
 
 async def llm(role: str, messages: list, system: str = "") -> dict:
     """
-    Routing LLM avec chaîne de fallback :
-    strategist → Claude (claude-opus-4-6) → MLX → Ollama → Kimi → OpenAI
-    autres rôles → Ollama → Kimi → OpenAI
+    Routing LLM — Claude API prioritaire pour tous les rôles.
+    Fallback : Kimi → OpenAI si Claude échoue.
     """
-    model = MODELS.get(role, MODELS["worker"])
-
-    # 1. Claude API — priorité absolue pour le stratège (meilleure qualité de planification)
-    if role == "strategist" and claude_available():
+    # 1. Claude API — pour tous les rôles
+    if claude_available():
         try:
             content = await call_claude(messages, system)
             return {"content": content, "provider": "claude", "model": CLAUDE_MODEL}
         except Exception as e:
-            print(f"[Brain] Claude failed: {e} → MLX/Ollama")
+            print(f"[Brain] Claude failed: {e}")
 
-    # 2. MLX — GPU local Apple Silicon (stratège uniquement)
-    if role == "strategist" and mlx_available():
-        try:
-            content = await call_mlx(messages, system)
-            return {"content": content, "provider": "mlx", "model": "qwen3-mlx"}
-        except Exception as e:
-            print(f"[Brain] MLX failed: {e} → Ollama")
-
-    # 3. Ollama — LLM local par défaut
-    last_error = ""
-    try:
-        content = await call_ollama(model, messages, system)
-        return {"content": content, "provider": "ollama", "model": model}
-    except Exception as e:
-        last_error = f"Ollama: {e}"
-        print(f"[Brain] Ollama failed: {e}")
-
-    # 4. Kimi — cloud uniquement si la clé est présente
+    # 2. Kimi — fallback cloud
     if os.environ.get("KIMI_API_KEY"):
         try:
             content = await call_kimi(messages, system)
             return {"content": content, "provider": "kimi", "model": "moonshot-v1-8k"}
-        except Exception as e_kimi:
-            last_error = f"Kimi: {e_kimi}"
-            print(f"[Brain] Kimi failed: {e_kimi}")
+        except Exception as e:
+            print(f"[Brain] Kimi failed: {e}")
 
-    # 5. OpenAI — fallback cloud secondaire
+    # 3. OpenAI — fallback cloud secondaire
     if os.environ.get("OPENAI_API_KEY"):
         try:
             content = await call_openai(messages, system)
             return {"content": content, "provider": "openai", "model": os.environ.get("OPENAI_MODEL", "gpt-4o-mini")}
-        except Exception as e_openai:
-            last_error = f"OpenAI: {e_openai}"
-            print(f"[Brain] OpenAI failed: {e_openai}")
+        except Exception as e:
+            print(f"[Brain] OpenAI failed: {e}")
 
-    raise RuntimeError(f"Tous les providers LLM ont échoué. Dernier: {last_error}")
+    raise RuntimeError("Tous les providers cloud ont échoué — vérifier ANTHROPIC_API_KEY dans .env")
 
 
 async def compress_context(messages: list) -> str:
     history = "\n".join([f"{m['role']}: {m['content']}" for m in messages])
     prompt = [{"role": "user", "content": f"Résume en moins de 400 tokens. Garde: décisions, erreurs, état actuel, prochaine étape. Supprime: répétitions, politesses.\n\n{history}"}]
 
-    for attempt in range(3):
-        try:
-            result = await call_ollama(MODELS["compressor"], prompt)
-            return result
-        except Exception as e:
-            if attempt < 2:
-                print(f"[Brain] compress_context retry {attempt+1}: {e}")
-                await asyncio.sleep(2 ** attempt)
-            else:
-                # Fallback: retourner une troncature simple
-                print(f"[Brain] compress_context failed after 3 attempts: {e}")
-                return history[-2000:]  # Garde les 2000 derniers chars
+    try:
+        result_dict = await llm("worker", prompt)
+        return result_dict["content"]
+    except Exception as e:
+        print(f"[Brain] compress_context failed: {e}")
+        return history[-2000:]
 
 
 def load_domain_context(mission_type: str) -> str:

@@ -17,7 +17,7 @@ LAYERS = {
     "executor":   {"file": "agent.executor",    "port": 8004, "level": 1},
     "perception": {"file": "agent.perception",  "port": 8002, "level": 1},
     "mcp_bridge": {"file": "agent.mcp_bridge",  "port": 8007, "level": 1},
-    "evolution":  {"file": "agent.evolution",   "port": 8005, "level": 2},
+    "evolution":  {"file": "agent.evolution",   "port": 8005, "level": 1},
 }
 
 HIBERNATE_TIMEOUT = 300

@@ -212,18 +212,12 @@ def main():
 
     # 1. Vérifier ollama
     print("🔍 Vérification d'Ollama... ", end="", flush=True)
-    if not check_ollama():
-        print("❌")
-        print()
-        print("  ERREUR : Ollama n'est pas actif.")
-        print("  Lancez d'abord :  ollama serve")
-        print()
-        sys.exit(1)
-    print("✅ actif")
+    if check_ollama():
+        print("✅ actif (optionnel — Claude API est le provider principal)")
+    else:
+        print("⚠️  non démarré (optionnel — Claude API sera utilisé)")
     print()
-
-    # 2. Pré-charger les modèles Ollama en RAM avant le démarrage des couches
-    warmup_ollama()
+    # Pas de warmup Ollama — Claude API est le provider principal
 
     # 3. Démarrer les couches dans l'ordre
     layer_status: dict[str, dict] = {}
@@ -238,11 +232,10 @@ def main():
         # Si Ollama ne répond pas dans le délai, on avertit mais on continue
         # (Brain pourra démarrer en mode dégradé ou retenter plus tard).
         if name == "Brain":
-            print("  🔍 Vérification warmup Ollama (modèles)... ", end="", flush=True)
-            if not check_ollama_ready(timeout=30):
-                print("  ⚠️  Ollama warmup incomplet — Brain démarré sans garantie de modèles")
+            if not os.environ.get("ANTHROPIC_API_KEY"):
+                print("  ⚠️  ANTHROPIC_API_KEY absent dans .env — Brain démarré en mode dégradé")
             else:
-                pass  # message déjà affiché par check_ollama_ready
+                print("  ✅ Claude API configurée — provider principal actif")
 
         print(f"  {emoji} Démarrage {name:<12} :{port}  {desc} ... ", end="", flush=True)
         try:

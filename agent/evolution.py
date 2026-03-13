@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from typing import Optional, List
 import yaml
 from dotenv import load_dotenv
+from contextlib import asynccontextmanager
 load_dotenv()
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -22,7 +23,13 @@ ROOT = Path(__file__).resolve().parent.parent
 with open(ROOT / "agent_config.yml") as f:
     CONFIG = yaml.safe_load(f)
 
-app = FastAPI(title="PICO-RUCHE Evolution", version="1.0.0")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    asyncio.create_task(auto_evolve_loop())
+    print("🧬 PICO-RUCHE Evolution actif — port 8005 · auto-évolution 1h")
+    yield
+
+app = FastAPI(title="PICO-RUCHE Evolution", version="1.0.0", lifespan=lifespan)
 
 SKILLS_DIR = ROOT / "agent" / "skills"
 LAYERS_DIR = ROOT / "agent" / "layers"
@@ -131,6 +138,45 @@ async def analyze_failures() -> dict:
         return json.loads(r.json().get("content", "{}"))
     except Exception:
         return r.json()
+
+
+async def auto_evolve_loop():
+    """Boucle d'auto-évolution — analyse les échecs toutes les heures et génère des skills si besoin."""
+    print("[Evolution] 🧬 Boucle auto-évolution démarrée (cycle 1h)")
+    await asyncio.sleep(60)  # délai initial pour laisser les autres couches démarrer
+    while True:
+        try:
+            analysis = await analyze_failures()
+            patterns = analysis.get("patterns", [])
+            recommendation = analysis.get("recommendation", "")
+            if patterns:
+                print(f"[Evolution] 🔍 Patterns détectés: {patterns[:2]}")
+                print(f"[Evolution] 💡 Recommandation: {recommendation[:100]}")
+            if analysis.get("new_skill_needed") and analysis.get("skill_description"):
+                skill_name = f"auto_skill_{int(asyncio.get_event_loop().time())}"
+                result = await generate_skill(skill_name, analysis["skill_description"])
+                print(f"[Evolution] ✨ Skill généré: {skill_name} — valid: {result.get('valid_syntax')}")
+            # Self-repair si un fichier de la ruche a un problème récent
+            try:
+                async with httpx.AsyncClient(timeout=5) as c:
+                    r = await c.post(
+                        f"http://localhost:{CONFIG['ports']['memory']}/search",
+                        json={"keywords": ["SyntaxError", "ImportError", "ModuleNotFoundError"]}
+                    )
+                errors = r.json().get("results", [])
+                for ep in errors[:1]:
+                    err_text = ep.get("result", "")
+                    import re as _re
+                    match = _re.search(r'File "([^"]+\.py)"', err_text)
+                    if match:
+                        fpath = match.group(1)
+                        print(f"[Evolution] 🔧 Auto-repair: {fpath}")
+                        await repair_file(fpath, err_text[:300])
+            except Exception:
+                pass
+        except Exception as e:
+            print(f"[Evolution] auto_evolve_loop erreur: {e}")
+        await asyncio.sleep(3600)  # cycle 1h
 
 
 class RepairRequest(BaseModel):
