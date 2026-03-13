@@ -1,0 +1,15 @@
+# config/layers/perception.yml — Configuration couche Perception
+interval_seconds: 30
+screenshot:
+  enabled: true
+  format: png
+  region: full
+vision:
+  model: "llava:7b"
+  fallback: "moondream:latest"
+  timeout_seconds: 30
+hash:
+  enabled: true  # Détection de changements par hash
+cache:
+  screenshots_max: 100
+  screenshots_ttl_hours: 24

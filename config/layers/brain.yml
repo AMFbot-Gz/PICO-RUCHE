@@ -1,0 +1,25 @@
+# config/layers/brain.yml — Configuration couche Brain
+providers:
+  primary: claude
+  fallback_chain: [kimi, openai]
+
+models:
+  claude: "claude-opus-4-6"
+  kimi: "moonshot-v1-8k"
+  openai: "gpt-4o-mini"
+  ollama_strategist: "llama3:latest"
+  ollama_worker: "llama3.2:3b"
+
+context:
+  max_tokens: 8000
+  compress_threshold: 6000
+
+circuit_breaker:
+  max_failures: 3
+  reset_backoff_seconds: [0, 5, 30]
+
+timeouts:
+  claude_seconds: 30
+  kimi_seconds: 30
+  openai_seconds: 30
+  memory_fetch_seconds: 8

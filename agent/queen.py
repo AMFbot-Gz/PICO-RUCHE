@@ -411,6 +411,49 @@ async def _handle_telegram_text(text: str):
 
 # ─── Boucle vitale ─────────────────────────────────────────────────────────────
 
+# ── Collecteurs parallèles — appelés en asyncio.gather() au début de chaque cycle ──
+
+async def _fetch_perception() -> dict:
+    """GET /observe sur la couche perception — retourne {} si indisponible."""
+    try:
+        async with httpx.AsyncClient(timeout=15) as c:
+            r = await c.post(f"http://localhost:{PORTS['perception']}/observe")
+            return r.json()
+    except Exception as e:
+        print(f"[Queen] Perception indisponible: {e}")
+        return {}
+
+
+async def _fetch_recent_memory(limit: int = 3) -> list:
+    """GET /episodes sur la couche memory — retourne [] si indisponible."""
+    try:
+        async with httpx.AsyncClient(timeout=8) as c:
+            r = await c.get(f"http://localhost:{PORTS['memory']}/episodes?limit={limit}")
+            return r.json().get("episodes", [])
+    except Exception:
+        return []
+
+
+async def _fetch_layer_health() -> dict:
+    """Ping rapide des couches critiques — retourne {name: bool} pour brain/memory/executor."""
+    results: dict = {}
+
+    async def ping(name: str, port: int) -> None:
+        try:
+            async with httpx.AsyncClient(timeout=2) as c:
+                r = await c.get(f"http://localhost:{port}/health")
+                results[name] = r.status_code == 200
+        except Exception:
+            results[name] = False
+
+    await asyncio.gather(
+        ping("brain", PORTS["brain"]),
+        ping("memory", PORTS["memory"]),
+        ping("executor", PORTS["executor"]),
+        return_exceptions=True,
+    )
+    return results
+
 
 def _extract_json(text: str) -> dict:
     """Extrait le premier JSON valide d'un texte, même enfoui dans du prose.
@@ -473,11 +516,30 @@ async def vital_loop():
     print(f"[Queen] Boucle vitale démarrée — premier cycle dans {startup_delay}s, puis toutes les {_base_interval}s")
     await asyncio.sleep(startup_delay)
     while VITAL_LOOP_RUNNING:
+        _cycle_start = time.monotonic()
         data = {}  # correction bug #1 : data initialisée avant le try pour éviter NameError si Perception est down
         try:
-            async with httpx.AsyncClient(timeout=15) as c:
-                obs = await c.post(f"http://localhost:{PORTS['perception']}/observe")
-                data = obs.json()
+            # ── Collecte parallèle au début du cycle (pipeline ~3s au lieu de ~8s) ──
+            data, recent_episodes, layer_health = await asyncio.gather(
+                _fetch_perception(),
+                _fetch_recent_memory(limit=3),
+                _fetch_layer_health(),
+                return_exceptions=True,
+            )
+            # Normalisation si une coroutine a levé une exception
+            if isinstance(data, Exception) or not isinstance(data, dict):
+                data = {}
+            if isinstance(recent_episodes, Exception):
+                recent_episodes = []
+            if isinstance(layer_health, Exception):
+                layer_health = {}
+
+            # ── Alerte et skip si couches critiques down ────────────────────────
+            if not layer_health.get("brain") and not layer_health.get("memory"):
+                print(f"[Queen] ⚠️  Couches critiques down — cycle {_vital_loop_cycle} ignoré")
+                await asyncio.sleep(_base_interval)
+                continue
+
             # Mise à jour WorldModel (grounding + état système)
             if _WORLD_MODEL_AVAILABLE:
                 try:
@@ -497,6 +559,11 @@ async def vital_loop():
             anomalies = [a for a in data.get("anomalies", []) if a]
             if anomalies or data.get("screen", {}).get("changed"):
                 context = f"Observations: {json.dumps(data, ensure_ascii=False)[:800]}"
+                # Enrichissement du contexte avec les épisodes récents collectés en parallèle
+                recent_context = [
+                    ep.get("summary", ep.get("result", ""))[:200]
+                    for ep in recent_episodes[:3]
+                ] if isinstance(recent_episodes, list) else []
                 async with httpx.AsyncClient(timeout=30) as c:
                     r = await c.post(
                         f"http://localhost:{PORTS['brain']}/raw",
@@ -507,7 +574,8 @@ async def vital_loop():
                                 "Réponds JSON: {\"should_act\": true/false, \"reason\": \"string\", "
                                 "\"action\": \"string\", \"risk\": \"low|medium|high\"}"
                             ),
-                            "system": "Tu es un agent autonome. Tu décides si tu dois agir sur la machine."
+                            "system": "Tu es un agent autonome. Tu décides si tu dois agir sur la machine.",
+                            "recent_context": recent_context,
                         }
                     )
                 raw_content = r.json().get("content", "")
@@ -590,6 +658,12 @@ async def vital_loop():
             _interval = 300 if _cpu < 5 else _base_interval
         else:
             _interval = _base_interval
+
+        # ─── Métriques de latence de cycle ───────────────────────────────────
+        _cycle_ms = int((time.monotonic() - _cycle_start) * 1000)
+        if _vital_loop_cycle % 10 == 0:
+            print(f"[Queen] Cycle {_vital_loop_cycle} — {_cycle_ms}ms — missions actives: {_active_missions}")
+
         await asyncio.sleep(_interval)
 
 

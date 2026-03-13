@@ -1,0 +1,15 @@
+# config/layers/memory.yml — Configuration couche Memory
+episodes:
+  max: 500
+  file: "agent/memory/episodes.jsonl"
+  archive_file: "agent/memory/episodes_archive.jsonl"
+  atomic_write: true  # Écriture .tmp → rename
+
+persistent:
+  file: "agent/memory/persistent.md"
+
+world_state:
+  file: "agent/memory/world_state.json"
+
+corruption:
+  alert_threshold: 10  # Alerter si > N lignes corrompues

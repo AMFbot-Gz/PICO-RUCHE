@@ -25,8 +25,39 @@ import { runIntentPipeline, isComputerUseIntent } from "./agents/intentPipeline.
 import { learn } from "./learning/missionMemory.js";
 import { missionQueue } from "./missionQueue.js";
 import { subagentManager } from "./subagents/index.js";
+import eventBus from '../core/events/event_bus.js';
+import { DistributedHealthMonitor } from '../core/monitoring/distributed_health.js';
+import MultilevelCache from '../core/cache/multilevel_cache.js';
 
 dotenv.config();
+
+// ─── MemoryManager interne avec TTL — évite les fuites mémoire dans les boucles ──────────────
+// Utilisé pour cacher les plans de la butterfly loop (évite appels LLM redondants pour
+// commandes répétées) et tout résultat intermédiaire éphémère.
+const _memManager = {
+  _store: new Map(),
+  set(key, value, ttlMs = 300_000) {
+    const expiresAt = Date.now() + ttlMs;
+    this._store.set(key, { value, expiresAt });
+    // Cleanup différé — libère l'entrée exactement à expiration
+    setTimeout(() => this._store.delete(key), ttlMs).unref?.();
+  },
+  get(key) {
+    const e = this._store.get(key);
+    if (!e) return undefined;
+    if (Date.now() > e.expiresAt) { this._store.delete(key); return undefined; }
+    return e.value;
+  },
+  has(key) { return this.get(key) !== undefined; },
+  size() { return this._store.size; },
+  purge() {
+    const now = Date.now();
+    for (const [k, v] of this._store) if (now > v.expiresAt) this._store.delete(k);
+  },
+};
+
+// Purge périodique — toutes les 5 minutes (évite accumulation en cas de miss sur setTimeout)
+setInterval(() => _memManager.purge(), 5 * 60 * 1000).unref?.();
 
 // Init swarm au démarrage (non-bloquant)
 try {
@@ -71,6 +102,9 @@ let _missionsCache = null;
 let _missionsCacheTs = 0;
 const MISSIONS_CACHE_TTL_MS = 30_000;
 
+// Cache L1 accélérateur pour les missions récentes (TTL 10 min, 200 entrées max)
+const _missionCache = new MultilevelCache({ l1MaxSize: 200, defaultTtl: 600_000 });
+
 export function loadMissions() {
   if (_missionsCache && Date.now() - _missionsCacheTs < MISSIONS_CACHE_TTL_MS) return _missionsCache;
   try {
@@ -92,6 +126,8 @@ export function saveMission(entry) {
   // FIX 2 — Mise à jour directe du cache mémoire sans relecture disque (évite race condition)
   _missionsCache = [entry, ...(_missionsCache || [])].slice(0, 200);
   _missionsCacheTs = Date.now(); // Réinitialise le TTL après écriture
+  // Cache L1 accélérateur : indexe par id pour accès O(1)
+  if (entry.id) _missionCache.set(entry.id, entry);
   try {
     writeFileSync(MISSIONS_FILE, JSON.stringify(_missionsCache, null, 2));
   } catch (err) {
@@ -248,27 +284,39 @@ export async function butterflyLoop(command, replyFn = async () => {}, missionId
       return finalText;
     }
 
-    // 1. Stratégie
-    await replyFn(`🧠 Analyse stratégique avec **${roles.strategist}**...`, { parse_mode: "Markdown" });
-    broadcastHUD({ type: "thinking", agent: "Stratège", thought: "Planification...", missionId: mission.id });
-    if (missionId) appendMissionEvent(missionId, { type: "thinking", agent: "strategist" });
+    // 1. Stratégie — cache plan TTL 5min pour éviter appel LLM redondant sur commande répétée
+    const _planCacheKey = `plan:${command.substring(0, 200)}`;
+    let plan = _memManager.get(_planCacheKey);
 
-    const planPrompt = `Stratège LaRuche. Mission: "${command.substring(0, 200)}"
+    if (!plan) {
+      await replyFn(`🧠 Analyse stratégique avec **${roles.strategist}**...`, { parse_mode: "Markdown" });
+      broadcastHUD({ type: "thinking", agent: "Stratège", thought: "Planification...", missionId: mission.id });
+      if (missionId) appendMissionEvent(missionId, { type: "thinking", agent: "strategist" });
+
+      const planPrompt = `Stratège LaRuche. Mission: "${command.substring(0, 200)}"
 JSON uniquement:{"mission":"résumé","tasks":[{"id":1,"description":"tâche","role":"worker"}]}
 2-3 tâches max. Rôles: worker|architect|vision`;
 
-    const planResult = await callLLM(planPrompt, {
-      role: "strategist",
-      temperature: 0.2,
-      mission_id: mission.id,
-      step_id: "plan",
-    });
-    const plan = safeParseJSON(planResult.text, {
-      mission: command,
-      tasks: [{ id: 1, description: command, role: "worker" }],
-    });
+      const planResult = await callLLM(planPrompt, {
+        role: "strategist",
+        temperature: 0.2,
+        mission_id: mission.id,
+        step_id: "plan",
+      });
+      plan = safeParseJSON(planResult.text, {
+        mission: command,
+        tasks: [{ id: 1, description: command, role: "worker" }],
+      });
 
-    mission = addModelUsed(mission, planResult.model);
+      // Cache le plan 5 minutes (TTL plans)
+      _memManager.set(_planCacheKey, plan, 5 * 60 * 1000);
+
+      mission = addModelUsed(mission, planResult.model);
+    } else {
+      // Plan récupéré du cache — pas d'appel LLM stratège
+      broadcastHUD({ type: "thinking", agent: "Stratège", thought: "Plan (cache)...", missionId: mission.id });
+    }
+
     mission = addMissionStep(mission, { id: 'plan', skill: 'strategist', description: 'Planification', status: 'done', result: plan.mission });
 
     await replyFn(
@@ -577,6 +625,17 @@ setInterval(() => cleanupOldScreenshots(SCREENSHOTS_DIR), 60 * 60 * 1000).unref(
 wss = startHUDServer();
 logger.info(`📡 HUD WebSocket en écoute sur port ${CONFIG.HUD_PORT}`);
 
+// Démarrage du health monitor distribué (7 couches Python)
+const healthMonitor = new DistributedHealthMonitor(eventBus);
+healthMonitor.start();
+
+// Réaction aux couches Python down (alerte après 3 échecs consécutifs)
+eventBus.on('layer.down', ({ name, failures }) => {
+  if (failures >= 3) {
+    console.error(`[Queen] ⚠️  ${name} DOWN depuis ${failures} checks — intervention requise`);
+  }
+});
+
 await printRoles();
 
 autoDetectRoles()
@@ -598,7 +657,7 @@ try {
 // ─── MODE STANDALONE ───────────────────────────────────────────────────────────────────────
 if (STANDALONE) {
   logger.info("🌐 Mode Standalone activé — Telegram désactivé");
-  startStandaloneServer({ loadMissions, saveMission, runMission, autoDetectRoles, broadcastHUD, logger, subagentManager });
+  startStandaloneServer({ loadMissions, saveMission, runMission, autoDetectRoles, broadcastHUD, logger, subagentManager, healthMonitor, missionCache: _missionCache, eventBus });
   const shutdown = () => { logger.info("🛑 Arrêt en cours..."); wss.close(); process.exit(0); };
   process.once("SIGINT", shutdown);
   process.once("SIGTERM", shutdown);

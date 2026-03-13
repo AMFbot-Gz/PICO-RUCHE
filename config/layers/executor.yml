@@ -1,0 +1,20 @@
+# config/layers/executor.yml — Configuration couche Executor
+sandbox:
+  max_command_length: 2000
+  shell_timeout_seconds: 30
+  output_max_chars: 10000
+  allowed_cwd_roots:
+    - "~"
+    - "~/Desktop/PICO-RUCHE"
+
+blocked_patterns:
+  - "rm.*-.*r.*/sys|/proc|/dev"
+  - "curl.*\\|.*(bash|sh|zsh)"
+  - "wget.*\\|.*(bash|sh|zsh)"
+  - "chmod.*7.*\\/etc"
+  - ">.*/etc/passwd"
+  - ">.*/etc/shadow"
+
+hitl:
+  require_for: [sudo, kill_9, killall, drop_table, truncate_table]
+  whitelist: [curl, wget, ls, cat, grep, ps, df, du, echo, pwd, git, npm, python3]

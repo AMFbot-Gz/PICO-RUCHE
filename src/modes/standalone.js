@@ -45,6 +45,7 @@ export function startStandaloneServer(deps) {
   });
 
   // ─── Routes missions ────────────────────────────────────────────────────────
+  // Passe aussi healthMonitor, missionCache, eventBus pour l'enrichissement de /api/status
   createMissionsRoutes(app, deps);
 
   // ─── Routes MCP ─────────────────────────────────────────────────────────────

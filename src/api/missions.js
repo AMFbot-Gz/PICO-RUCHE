@@ -154,7 +154,7 @@ export function appendMissionEvent(id, event) {
  * }} deps
  */
 export function createMissionsRoutes(app, deps) {
-  const { loadMissions, runMission, autoDetectRoles, broadcastHUD, logger } = deps;
+  const { loadMissions, runMission, autoDetectRoles, broadcastHUD, logger, healthMonitor, missionCache, eventBus } = deps;
 
   // Injecte broadcastHUD dans le scope module pour le cleanup timeout
   _broadcastHUD = broadcastHUD;
@@ -281,6 +281,9 @@ export function createMissionsRoutes(app, deps) {
         episodicMemory: episodeStats(),
         swarm: nodeRegistry.stats(),
       },
+      layers_health: healthMonitor?.getStatus() ?? null,
+      cache_metrics: missionCache?.getMetrics() ?? null,
+      event_bus: eventBus?.getMetrics() ?? null,
       timestamp: new Date().toISOString(),
     });
   });

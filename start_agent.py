@@ -42,6 +42,7 @@ LAYERS = [
         "port": 8006,
         "desc": "épisodes JSONL",
         "emoji": "💾",
+        "depends_on": [],
     },
     {
         "name": "Brain",
@@ -49,6 +50,7 @@ LAYERS = [
         "port": 8003,
         "desc": "Claude API",
         "emoji": "🧠",
+        "depends_on": [],
     },
     {
         "name": "Perception",
@@ -56,6 +58,7 @@ LAYERS = [
         "port": 8002,
         "desc": "screenshots + scan",
         "emoji": "👁️",
+        "depends_on": ["Memory"],
     },
     {
         "name": "Executor",
@@ -63,6 +66,7 @@ LAYERS = [
         "port": 8004,
         "desc": "shell sandboxé",
         "emoji": "⚙️",
+        "depends_on": ["Brain"],
     },
     {
         "name": "Evolution",
@@ -70,6 +74,7 @@ LAYERS = [
         "port": 8005,
         "desc": "auto-amélioration",
         "emoji": "🧬",
+        "depends_on": ["Executor", "Memory"],
     },
     {
         "name": "MCP Bridge",
@@ -77,6 +82,7 @@ LAYERS = [
         "port": 8007,
         "desc": "proxy MCP Node.js",
         "emoji": "🌉",
+        "depends_on": ["Brain"],
     },
     {
         "name": "Queen",
@@ -84,13 +90,13 @@ LAYERS = [
         "port": 8001,
         "desc": "boucle vitale 30s",
         "emoji": "👑",
-        "startup_delay": 3.0,  # FIX 3 : Queen dépend de toutes les couches → délai x2
+        "depends_on": ["Brain", "Memory", "MCP Bridge"],
     },
 ]
 
 HEALTH_RETRIES = 3
-HEALTH_INTERVAL = 2.0  # secondes entre chaque tentative
-STARTUP_DELAY = 1.5    # secondes entre chaque couche
+HEALTH_INTERVAL = 2.0  # secondes entre chaque tentative (check_health legacy)
+STARTUP_DELAY = 1.5    # secondes entre chaque couche (legacy — remplacé par wait_healthy)
 
 procs: list[subprocess.Popen] = []
 
@@ -172,6 +178,36 @@ def check_health(port: int, retries: int = HEALTH_RETRIES) -> tuple[bool, float]
             pass
         if attempt < retries - 1:
             time.sleep(HEALTH_INTERVAL)
+    return False, 0.0
+
+
+def wait_healthy(port: int, name: str, max_wait: float = 45.0) -> tuple[bool, float]:
+    """
+    Attend que le service soit healthy avec backoff exponentiel.
+    Retourne (succès, latence_ms).
+    Delays: 1s, 2s, 4s, 8s, 16s … jusqu'à max_wait total.
+    """
+    deadline = time.monotonic() + max_wait
+    delay = 1.0
+    attempt = 0
+    while time.monotonic() < deadline:
+        try:
+            start = time.monotonic()
+            r = httpx.get(f"http://localhost:{port}/health", timeout=3)
+            latency_ms = (time.monotonic() - start) * 1000
+            if r.status_code == 200:
+                return True, latency_ms
+        except Exception:
+            pass
+        attempt += 1
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        sleep_time = min(delay, remaining)
+        # Afficher les tentatives intermédiaires
+        print(f"\r     ⏳ {name} tentative {attempt} — attente {sleep_time:.0f}s ...", end="", flush=True)
+        time.sleep(sleep_time)
+        delay = min(delay * 2, 16.0)   # Backoff exponentiel, max 16s
     return False, 0.0
 
 
@@ -288,20 +324,29 @@ def main():
             else:
                 print("  ✅ Claude API configurée — provider principal actif")
 
+        # Vérifier dépendances avant démarrage
+        depends = layer.get("depends_on", [])
+        deps_ok = True
+        for dep_name in depends:
+            dep_status = layer_status.get(dep_name, {})
+            if not dep_status.get("ok"):
+                print(f"  ⚠️  {name} — dépendance {dep_name} non disponible, démarrage quand même")
+                deps_ok = False
+
         print(f"  {emoji} Démarrage {name:<12} :{port}  {desc} ... ", end="", flush=True)
         try:
             p = start_layer(layer)
             procs.append(p)
-            # Pause entre les couches pour que le processus s'initialise
-            # FIX 3 : délai adaptatif — Queen reçoit startup_delay=3.0
-            time.sleep(layer.get("startup_delay", STARTUP_DELAY))
+            # Pause minimale pour que le processus s'initialise
+            time.sleep(0.5)
 
-            ok, latency = check_health(port)
+            ok, latency = wait_healthy(port, name, max_wait=45.0)
             if ok:
-                print(f"✅  ({latency:.0f}ms)")
+                # Efface la ligne ⏳ intermédiaire et affiche le résultat final
+                print(f"\r  {emoji} Démarrage {name:<12} :{port}  {desc} ... ✅  ({latency:.0f}ms)")
                 layer_status[name] = {"ok": True, "latency": latency, "port": port, "desc": desc}
             else:
-                print(f"⚠️  (timeout — processus démarré, health non confirmé)")
+                print(f"\n     ⚠️  (timeout — processus démarré, health non confirmé)")
                 # FIX 2 : affiche les dernières lignes du log pour diagnostiquer
                 log_file = ROOT / "agent" / "logs" / f"{name.lower().replace(' ', '_')}.log"
                 try:
@@ -346,6 +391,10 @@ def main():
     hive_status = "Essaim actif" if all_ok else "Essaim partiel — certaines couches KO"
     print(f"🐝 {hive_status}  |  Telegram: [{tg}]  |  v5.0.0 — 7 couches Python")
     print(bar)
+
+    total_startup = sum(s.get("latency", 0) for s in layer_status.values())
+    healthy_count = sum(1 for s in layer_status.values() if s.get("ok"))
+    print(f"⚡ Temps total démarrage : {total_startup/1000:.1f}s | {healthy_count}/{len(LAYERS)} couches actives")
 
     if not all_ok:
         print()

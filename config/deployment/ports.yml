@@ -1,0 +1,10 @@
+# config/deployment/ports.yml — Ports de toutes les couches
+node_queen: 3000
+queen_python: 8001
+perception: 8002
+brain: 8003
+executor: 8004
+evolution: 8005
+memory: 8006
+mcp_bridge: 8007
+hud_ws: 9001
