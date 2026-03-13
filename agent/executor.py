@@ -117,9 +117,43 @@ def is_blocked(cmd: str) -> bool:
     return False
 
 
+_SAFE_COMMANDS = frozenset([
+    'curl', 'wget', 'ls', 'cat', 'grep', 'ps', 'df', 'du',
+    'echo', 'pwd', 'which', 'find', 'head', 'tail', 'wc',
+    'node', 'python3', 'python', 'npm', 'pip3', 'pip', 'git', 'make',
+    'lsof', 'netstat', 'top', 'htop', 'iostat', 'uname', 'env', 'printenv',
+    'date', 'uptime', 'id', 'whoami', 'hostname', 'nslookup', 'dig', 'ping',
+])
+
+# Patterns regex précis — évite les faux positifs par substring (ex: "delete" dans curl -X DELETE)
+_CONFIRM_PATTERNS_RE = [
+    re.compile(r'\bdelete\b', re.IGNORECASE),            # mot entier "delete"
+    re.compile(r'\bdrop\s+table\b', re.IGNORECASE),
+    re.compile(r'\btruncate\s+table\b', re.IGNORECASE),
+    re.compile(r'\bkill\s+-9\b', re.IGNORECASE),         # kill -9 spécifiquement
+    re.compile(r'\bkillall\b', re.IGNORECASE),
+    re.compile(r'\bshutdown\b', re.IGNORECASE),           # shutdown (arrêt système)
+    re.compile(r'\bformat\b', re.IGNORECASE),             # format (formatage disque)
+    re.compile(r'\bsudo\b', re.IGNORECASE),               # sudo toujours confirmé
+    re.compile(r'\bsu\s+-', re.IGNORECASE),               # su - (changement vers root)
+]
+
+
 def needs_confirm(cmd: str) -> bool:
-    """Vérifie si la commande nécessite une confirmation humaine (HITL)."""
-    return any(k in cmd.lower() for k in REQUIRE_CONFIRM)
+    # Vérifie si la commande nécessite une confirmation humaine (HITL).
+    # Deux couches :
+    # 1. Whitelist _SAFE_COMMANDS : si le premier token est une commande sure connue → False
+    # 2. Regex _CONFIRM_PATTERNS_RE sur le reste : mots entiers, pas substrings
+    # Cas corrects : curl -X DELETE → False (whitelist) · kill -9 → True · sudo rm → True
+    if not cmd.strip():
+        return False
+    first_token = cmd.strip().split()[0].lower().lstrip('./')
+    if first_token in _SAFE_COMMANDS:
+        return False
+    for pattern in _CONFIRM_PATTERNS_RE:
+        if pattern.search(cmd):
+            return True
+    return False
 
 
 # ─── Vérification post-action ──────────────────────────────────────────────────

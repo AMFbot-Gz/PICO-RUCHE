@@ -151,7 +151,10 @@ def _save_mission_sync(mission_id, input_text, status, plan, result, provider, d
 
 # ─── Telegram helpers ──────────────────────────────────────────────────────────
 
-async def send_telegram(text: str):
+async def send_telegram(text: str) -> bool:
+    """Envoie un message Telegram. Retourne True si succès, False sinon.
+    Gère le 409 Conflict (deux processus polltent le même token simultanément).
+    """
     # Tronque les messages trop longs pour l'API Telegram (limite 4096) (fix #2)
     if len(text) > 4000:
         truncated = text[:3900]
@@ -161,16 +164,23 @@ async def send_telegram(text: str):
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
     chat_id = os.environ.get("ADMIN_TELEGRAM_ID", "")
     if not token or not chat_id:
-        print(f"[Queen] Telegram non configuré: {text[:80]}")
-        return
+        print(f"[Queen] Telegram non configuré — message ignoré: {text[:80]}")
+        return False
     try:
         async with httpx.AsyncClient(timeout=10) as c:
-            await c.post(
+            r = await c.post(
                 f"https://api.telegram.org/bot{token}/sendMessage",
                 json={"chat_id": chat_id, "text": text, "parse_mode": "Markdown"}
             )
+            if r.status_code == 409:
+                print("[Queen] ⚠️  409 Conflict — un autre processus utilise ce token Telegram")
+                print("[Queen]    → Solution : vérifier que STANDALONE_MODE=true dans .env")
+                print("[Queen]    → Ghost OS Node.js doit tourner en mode standalone (sans Telegram)")
+                return False
+            return r.status_code == 200
     except Exception as e:
         print(f"[Queen] Telegram erreur: {e}")
+        return False
 
 
 # ─── HITL helpers ──────────────────────────────────────────────────────────────
