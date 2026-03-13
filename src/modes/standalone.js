@@ -10,6 +10,7 @@
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
 import { createMissionsRoutes } from "../api/missions.js";
+import { createMcpRoutes } from "../api/mcp_routes.js";
 
 /**
  * Lance le serveur API standalone
@@ -43,6 +44,10 @@ export function startStandaloneServer(deps) {
 
   // ─── Routes missions ────────────────────────────────────────────────────────
   createMissionsRoutes(app, deps);
+
+  // ─── Routes MCP ─────────────────────────────────────────────────────────────
+  // Endpoints directs vers les modules MCP Node.js (os-control, terminal, etc.)
+  createMcpRoutes(app);
 
   // ─── Route racine ───────────────────────────────────────────────────────────
   app.get("/", (c) =>

@@ -25,11 +25,18 @@ LAST_HASH = {"screen": "", "timestamp": ""}
 
 
 def take_screenshot(region: Optional[str] = None) -> Path:
+    """Capture écran via screencapture (macOS). Lève RuntimeError si échec."""
     if region:
         cmd = ["screencapture", "-x", "-R", region, str(SCREENSHOT_PATH)]
     else:
         cmd = ["screencapture", "-x", str(SCREENSHOT_PATH)]
-    subprocess.run(cmd, check=True)
+    result = subprocess.run(cmd, capture_output=True)
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"screencapture a échoué (code {result.returncode}): {result.stderr.decode()[:200]}"
+        )
+    if not SCREENSHOT_PATH.exists():
+        raise RuntimeError("screencapture n'a pas produit de fichier")
     return SCREENSHOT_PATH
 
 
@@ -38,7 +45,8 @@ def hash_file(path: Path) -> str:
 
 
 def scan_system() -> dict:
-    cpu = psutil.cpu_percent(interval=1)
+    # interval=None évite le blocage d'1 seconde — valeur instantanée depuis le dernier appel
+    cpu = psutil.cpu_percent(interval=None)
     ram = psutil.virtual_memory()
     disk = psutil.disk_usage("/")
     procs = [p.info for p in psutil.process_iter(["pid", "name", "cpu_percent", "memory_percent"])
@@ -84,17 +92,27 @@ def scan_recent_files(directory: str = os.path.expanduser("~/Desktop"), minutes:
 
 @app.post("/screenshot")
 async def screenshot(region: Optional[str] = None):
-    path = take_screenshot(region)
-    new_hash = hash_file(path)
-    changed = new_hash != LAST_HASH["screen"]
-    LAST_HASH["screen"] = new_hash
-    LAST_HASH["timestamp"] = datetime.utcnow().isoformat()
-    return {
-        "path": str(path),
-        "hash": new_hash,
-        "changed": changed,
-        "timestamp": LAST_HASH["timestamp"]
-    }
+    try:
+        path = take_screenshot(region)
+        new_hash = hash_file(path)
+        changed = new_hash != LAST_HASH["screen"]
+        LAST_HASH["screen"] = new_hash
+        LAST_HASH["timestamp"] = datetime.utcnow().isoformat()
+        return {
+            "path": str(path),
+            "hash": new_hash,
+            "changed": changed,
+            "timestamp": LAST_HASH["timestamp"],
+            "error": None
+        }
+    except Exception as e:
+        return {
+            "path": None,
+            "hash": None,
+            "changed": False,
+            "timestamp": datetime.utcnow().isoformat(),
+            "error": str(e)
+        }
 
 
 @app.get("/system")
@@ -110,22 +128,40 @@ async def recent_files(directory: str = None, minutes: int = 5):
 
 @app.post("/observe")
 async def full_observation():
-    path = take_screenshot()
-    new_hash = hash_file(path)
-    changed = new_hash != LAST_HASH["screen"]
-    LAST_HASH["screen"] = new_hash
-    system = scan_system()
-    recent = scan_recent_files()
+    now = datetime.utcnow().isoformat()
+    # Screenshot — tolérant aux erreurs (peut échouer en headless)
+    screen_info: dict = {"changed": False, "path": None, "hash": None, "error": None}
+    try:
+        path = take_screenshot()
+        new_hash = hash_file(path)
+        changed = new_hash != LAST_HASH["screen"]
+        LAST_HASH["screen"] = new_hash
+        LAST_HASH["timestamp"] = now
+        screen_info = {"changed": changed, "path": str(path), "hash": new_hash, "error": None}
+    except Exception as e:
+        screen_info["error"] = str(e)
+    # Scan système — toujours disponible
+    try:
+        system = scan_system()
+    except Exception as e:
+        system = {"error": str(e)}
+    # Fichiers récents
+    try:
+        recent = scan_recent_files()
+    except Exception:
+        recent = []
+    # Anomalies — filtrer les None
+    anomalies = [a for a in [
+        f"CPU élevé: {system.get('cpu_percent', 0)}%" if system.get("cpu_percent", 0) > 80 else None,
+        f"RAM critique: {system.get('ram_percent', 0)}%" if system.get("ram_percent", 0) > 90 else None,
+        f"Disque plein: {system.get('disk_free_gb', 99)}GB libres" if system.get("disk_free_gb", 99) < 5 else None,
+    ] if a is not None]
     return {
-        "timestamp": datetime.utcnow().isoformat(),
-        "screen": {"path": str(path), "hash": new_hash, "changed": changed},
+        "timestamp": now,
+        "screen": screen_info,
         "system": system,
         "recent_files": recent,
-        "anomalies": [
-            f"CPU élevé: {system['cpu_percent']}%" if system["cpu_percent"] > 80 else None,
-            f"RAM critique: {system['ram_percent']}%" if system["ram_percent"] > 90 else None,
-            f"Disque plein: {system['disk_free_gb']}GB libres" if system["disk_free_gb"] < 5 else None,
-        ]
+        "anomalies": anomalies
     }
 
 

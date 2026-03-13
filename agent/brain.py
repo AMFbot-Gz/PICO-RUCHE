@@ -139,19 +139,46 @@ async def think(req: ThinkRequest):
     domain_ctx = load_domain_context(req.mission_type)
     system_prompt = f"""Tu es le cerveau de PICO-RUCHE (Ghost OS v5.0.0).
 Tu analyses la situation et décomposes la mission en sous-tâches atomiques.
-Maximum 5 sous-tâches. Réponds UNIQUEMENT en JSON valide.
-Format: {{"subtasks": [{{"id": "1", "role": "worker|vision|repair|shell", "instruction": "string", "risk": "low|medium|high"}}], "reasoning": "string", "estimated_duration": "Xs"}}
+Maximum {CONFIG['brain']['max_subtasks']} sous-tâches. Réponds UNIQUEMENT en JSON valide.
+Format: {{"goal": "string", "subtasks": [{{"id": "1", "role": "shell|vision|worker|strategist", "instruction": "string", "risk": "low|medium|high"}}], "reasoning": "string", "estimated_duration": "Xs"}}
+Les niveaux de risque: low=action sûre et réversible, medium=modification système, high=suppression ou changement critique.
 {f"Contexte domaine:{chr(10)}{domain_ctx[:1000]}" if domain_ctx else ""}"""
     messages.append({"role": "user", "content": req.mission})
     result = await llm(req.role, messages, system_prompt)
+    raw_content = result["content"].strip()
+    # Extraire le JSON même si le LLM ajoute du texte avant/après
+    json_match = None
+    brace_start = raw_content.find("{")
+    brace_end = raw_content.rfind("}")
+    if brace_start != -1 and brace_end != -1:
+        json_match = raw_content[brace_start:brace_end + 1]
     try:
-        plan = json.loads(result["content"])
+        plan = json.loads(json_match or raw_content)
     except Exception:
-        plan = {
-            "subtasks": [{"id": "1", "role": "worker", "instruction": req.mission, "risk": "medium"}],
-            "reasoning": result["content"],
-            "estimated_duration": "?"
-        }
+        plan = {}
+    # Garantir la structure minimale attendue
+    if not isinstance(plan.get("subtasks"), list) or not plan["subtasks"]:
+        plan["subtasks"] = [
+            {"id": "1", "role": "worker", "instruction": req.mission, "risk": "medium"}
+        ]
+    if not plan.get("goal"):
+        plan["goal"] = req.mission
+    if not plan.get("reasoning"):
+        plan["reasoning"] = raw_content if not json_match else plan.get("reasoning", "")
+    if not plan.get("estimated_duration"):
+        plan["estimated_duration"] = "?"
+    # Valider chaque subtask
+    valid_roles = {"shell", "vision", "worker", "strategist", "repair"}
+    valid_risks = set(CONFIG["brain"]["risk_levels"])
+    for st in plan["subtasks"]:
+        if st.get("role") not in valid_roles:
+            st["role"] = "worker"
+        if st.get("risk") not in valid_risks:
+            st["risk"] = "medium"
+        if not st.get("id"):
+            st["id"] = str(plan["subtasks"].index(st) + 1)
+        if not st.get("instruction"):
+            st["instruction"] = req.mission
     return {
         "plan": plan,
         "provider": result["provider"],

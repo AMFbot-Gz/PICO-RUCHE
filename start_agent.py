@@ -1,63 +1,182 @@
 """
-Lance tout PICO-RUCHE en une commande
+Lance tout PICO-RUCHE en une commande — production-ready
 Usage: python3 start_agent.py
 """
+import os
 import subprocess
 import sys
 import time
 import signal
-import os
+import json
+from pathlib import Path
+from datetime import datetime
 
 try:
     import httpx
 except ImportError:
-    subprocess.run([sys.executable, "-m", "pip", "install", "httpx", "--break-system-packages", "-q"])
+    subprocess.run(
+        [sys.executable, "-m", "pip", "install", "httpx", "--break-system-packages", "-q"],
+        check=False,
+    )
     import httpx
 
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+
+ROOT = Path(__file__).resolve().parent
+PIDS_DIR = ROOT / "agent" / ".pids"
+
+# Ordre de démarrage : brain et memory AVANT queen
 LAYERS = [
-    {"name": "memory",     "file": "agent.memory",     "port": 8006},
-    {"name": "perception", "file": "agent.perception", "port": 8002},
-    {"name": "brain",      "file": "agent.brain",      "port": 8003},
-    {"name": "executor",   "file": "agent.executor",   "port": 8004},
-    {"name": "evolution",  "file": "agent.evolution",  "port": 8005},
-    {"name": "mcp_bridge", "file": "agent.mcp_bridge", "port": 8007},
-    {"name": "queen",      "file": "agent.queen",      "port": 8001},
+    {
+        "name": "Brain",
+        "file": "agent.brain",
+        "port": 8003,
+        "desc": "llama3:latest",
+        "emoji": "🧠",
+    },
+    {
+        "name": "Perception",
+        "file": "agent.perception",
+        "port": 8002,
+        "desc": "moondream",
+        "emoji": "👁 ",
+    },
+    {
+        "name": "Executor",
+        "file": "agent.executor",
+        "port": 8004,
+        "desc": "sandboxé",
+        "emoji": "⚙️ ",
+    },
+    {
+        "name": "Memory",
+        "file": "agent.memory",
+        "port": 8006,
+        "desc": "episodes.jsonl",
+        "emoji": "💾",
+    },
+    {
+        "name": "Evolution",
+        "file": "agent.evolution",
+        "port": 8005,
+        "desc": "registry.json",
+        "emoji": "🧬",
+    },
+    {
+        "name": "MCP Bridge",
+        "file": "agent.mcp_bridge",
+        "port": 8007,
+        "desc": "→ Node.js :3000",
+        "emoji": "🔌",
+    },
+    {
+        "name": "Queen",
+        "file": "agent.queen",
+        "port": 8001,
+        "desc": "boucle 30s",
+        "emoji": "👑",
+    },
 ]
 
-procs = []
-ROOT = os.path.dirname(os.path.abspath(__file__))
+HEALTH_RETRIES = 3
+HEALTH_INTERVAL = 2.0  # secondes entre chaque tentative
+STARTUP_DELAY = 1.5    # secondes entre chaque couche
+
+procs: list[subprocess.Popen] = []
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def ensure_dirs():
+    PIDS_DIR.mkdir(parents=True, exist_ok=True)
+    (ROOT / "agent" / "logs").mkdir(parents=True, exist_ok=True)
 
 
-def start_layer(layer):
+def write_pid(name: str, pid: int):
+    pid_file = PIDS_DIR / f"{name.lower().replace(' ', '_')}.pid"
+    pid_file.write_text(str(pid))
+
+
+def check_ollama() -> bool:
+    """Vérifie qu'Ollama est actif avant tout démarrage."""
+    try:
+        r = httpx.get("http://localhost:11434/api/tags", timeout=3)
+        return r.status_code == 200
+    except Exception:
+        return False
+
+
+def check_health(port: int, retries: int = HEALTH_RETRIES) -> tuple[bool, float]:
+    """
+    Tente retries fois d'appeler /health sur le port donné.
+    Retourne (succès, latence_ms).
+    """
+    for attempt in range(retries):
+        try:
+            start = time.monotonic()
+            r = httpx.get(f"http://localhost:{port}/health", timeout=3)
+            latency_ms = (time.monotonic() - start) * 1000
+            if r.status_code == 200:
+                return True, latency_ms
+        except Exception:
+            pass
+        if attempt < retries - 1:
+            time.sleep(HEALTH_INTERVAL)
+    return False, 0.0
+
+
+def start_layer(layer: dict) -> subprocess.Popen:
+    log_file = ROOT / "agent" / "logs" / f"{layer['name'].lower().replace(' ', '_')}.log"
+    log_fd = open(log_file, "a")
     cmd = [
         sys.executable, "-m", "uvicorn",
         f"{layer['file']}:app",
         "--host", "0.0.0.0",
         "--port", str(layer["port"]),
-        "--log-level", "warning"
+        "--log-level", "warning",
     ]
-    p = subprocess.Popen(cmd, cwd=ROOT)
-    print(f"  ✅ {layer['name']:15} → http://localhost:{layer['port']}")
+    p = subprocess.Popen(cmd, cwd=ROOT, stdout=log_fd, stderr=log_fd)
+    write_pid(layer["name"], p.pid)
     return p
 
 
-def check_health(port, retries=15):
-    for _ in range(retries):
-        try:
-            r = httpx.get(f"http://localhost:{port}/health", timeout=2)
-            if r.status_code == 200:
-                return True
-        except Exception:
-            pass
-        time.sleep(0.7)
+def telegram_configured() -> bool:
+    env_file = ROOT / ".env"
+    if not env_file.exists():
+        return False
+    content = env_file.read_text()
+    for line in content.splitlines():
+        if line.startswith("TELEGRAM_BOT_TOKEN="):
+            token = line.split("=", 1)[1].strip()
+            return bool(token)
     return False
 
 
+# ---------------------------------------------------------------------------
+# Arrêt propre
+# ---------------------------------------------------------------------------
+
 def signal_handler(sig, frame):
-    print("\n🛑 Arrêt PICO-RUCHE...")
+    print("\n🛑 Interruption reçue — arrêt de PICO-RUCHE...")
     for p in procs:
         try:
             p.terminate()
+        except Exception:
+            pass
+    # Attendre la terminaison gracieuse
+    deadline = time.monotonic() + 5
+    for p in procs:
+        try:
+            remaining = max(0, deadline - time.monotonic())
+            p.wait(timeout=remaining)
+        except subprocess.TimeoutExpired:
+            try:
+                p.kill()
+            except Exception:
+                pass
         except Exception:
             pass
     sys.exit(0)
@@ -66,38 +185,117 @@ def signal_handler(sig, frame):
 signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
 
-print("\n🐝 Démarrage PICO-RUCHE — Agent Vivant Hybride")
-print("=" * 50)
+# ---------------------------------------------------------------------------
+# Point d'entrée
+# ---------------------------------------------------------------------------
 
-for layer in LAYERS:
-    p = start_layer(layer)
-    procs.append(p)
-    time.sleep(1.5)
+def main():
+    ensure_dirs()
 
-print("\n🔍 Vérification santé des couches...")
-all_ok = True
-for layer in LAYERS:
-    ok = check_health(layer["port"])
-    status = "✅" if ok else "❌"
-    print(f"  {status} {layer['name']:15} port {layer['port']}")
-    if not ok:
-        all_ok = False
+    width = 50
+    bar = "━" * width
 
-print("\n" + "=" * 50)
-if all_ok:
-    print("✅ PICO-RUCHE actif — toutes les couches répondent")
-else:
-    print("⚠️  Certaines couches n'ont pas démarré — vérifier les logs")
+    print()
+    print("🐝 PICO-RUCHE v1.0 — Démarrage")
+    print(bar)
 
-print("📡 Queen:    http://localhost:8001")
-print("📡 Status:   http://localhost:8001/status")
-print("📡 Missions: http://localhost:8001/missions")
-print("💬 Telegram: envoie /mission <texte> à ton bot")
-print("🔄 Boucle vitale: toutes les 30s")
-print("\nCtrl+C pour arrêter\n")
+    # 1. Vérifier ollama
+    print("🔍 Vérification d'Ollama... ", end="", flush=True)
+    if not check_ollama():
+        print("❌")
+        print()
+        print("  ERREUR : Ollama n'est pas actif.")
+        print("  Lancez d'abord :  ollama serve")
+        print()
+        sys.exit(1)
+    print("✅ actif")
+    print()
 
-try:
-    for p in procs:
-        p.wait()
-except KeyboardInterrupt:
-    signal_handler(None, None)
+    # 2. Démarrer les couches dans l'ordre
+    layer_status: dict[str, dict] = {}
+
+    for layer in LAYERS:
+        name = layer["name"]
+        port = layer["port"]
+        desc = layer["desc"]
+        emoji = layer["emoji"]
+
+        print(f"  {emoji} Démarrage {name:<12} :{port}  {desc} ... ", end="", flush=True)
+        try:
+            p = start_layer(layer)
+            procs.append(p)
+            # Pause entre les couches pour que le processus s'initialise
+            time.sleep(STARTUP_DELAY)
+
+            ok, latency = check_health(port)
+            if ok:
+                print(f"✅  ({latency:.0f}ms)")
+                layer_status[name] = {"ok": True, "latency": latency, "port": port, "desc": desc}
+            else:
+                print(f"⚠️  (timeout — processus démarré, health non confirmé)")
+                layer_status[name] = {"ok": False, "latency": 0, "port": port, "desc": desc}
+
+        except Exception as exc:
+            print(f"❌  ({exc})")
+            layer_status[name] = {"ok": False, "latency": 0, "port": port, "desc": desc, "error": str(exc)}
+
+    # 3. Tableau de bord ASCII
+    print()
+    print(bar)
+    print("🐝 PICO-RUCHE v1.0 — Tableau de bord")
+    print(bar)
+
+    display_order = [
+        ("Brain",      8003, "llama3:latest"),
+        ("Perception", 8002, "moondream"),
+        ("Executor",   8004, "sandboxé"),
+        ("Memory",     8006, "episodes.jsonl"),
+        ("Evolution",  8005, "registry.json"),
+        ("MCP Bridge", 8007, "→ Node.js :3000"),
+        ("Queen",      8001, "boucle 30s"),
+    ]
+
+    for name, port, desc in display_order:
+        s = layer_status.get(name, {})
+        icon = "✅" if s.get("ok") else "❌"
+        print(f"  {icon} {name:<12} :{port}  {desc}")
+
+    print(bar)
+
+    tg = "configuré" if telegram_configured() else "non configuré"
+    all_ok = all(s.get("ok") for s in layer_status.values())
+    hive_status = "Essaim actif" if all_ok else "Essaim partiel — certaines couches KO"
+    print(f"🐝 {hive_status}  |  Telegram: [{tg}]")
+    print(bar)
+
+    if not all_ok:
+        print()
+        print("⚠️  Couches avec erreurs :")
+        for name, s in layer_status.items():
+            if not s.get("ok"):
+                err = s.get("error", "health timeout")
+                print(f"   ❌ {name}: {err}")
+        print("   → Logs : agent/logs/<couche>.log")
+
+    print()
+    print("📡 Queen    :  http://localhost:8001")
+    print("📡 Status   :  http://localhost:8001/status")
+    print("📡 Missions :  http://localhost:8001/missions")
+    print("💬 Telegram :  envoie /status à ton bot")
+    print("🔄 Boucle   :  toutes les 30 secondes")
+    print()
+    print("  → python3 scripts/status_agent.py  (monitoring)")
+    print("  → python3 stop_agent.py            (arrêt propre)")
+    print()
+    print("Ctrl+C pour arrêter l'essaim")
+    print()
+
+    try:
+        for p in procs:
+            p.wait()
+    except KeyboardInterrupt:
+        signal_handler(None, None)
+
+
+if __name__ == "__main__":
+    main()
