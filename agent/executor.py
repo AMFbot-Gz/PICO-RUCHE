@@ -33,11 +33,17 @@ REQUIRE_CONFIRM = CONFIG["security"]["require_confirmation_for"]
 
 # Patterns regex compilés — plus robustes que le substring matching
 _BLOCKED_PATTERNS = [
-    re.compile(r'rm\s+-[a-z]*r[a-z]*f?\s+/', re.IGNORECASE),   # rm -rf / et variantes
+    re.compile(r'rm\s+.*-.*r.*\s+/', re.IGNORECASE),            # rm + tout flag contenant r + path absolu (FIX 1)
+    re.compile(r'rm\s+--recursive', re.IGNORECASE),              # rm --recursive (FIX 1)
     re.compile(r':\s*\(\s*\)\s*\{.*\|.*\}', re.DOTALL),         # fork bomb
     re.compile(r'dd\s+if=/dev/zero', re.IGNORECASE),
     re.compile(r'\bmkfs\b', re.IGNORECASE),
     re.compile(r'\b(shutdown|reboot|poweroff|halt)\b', re.IGNORECASE),
+    re.compile(r'chmod\s+[0-7]*7[0-7]*\s+/etc', re.IGNORECASE),  # chmod sur /etc (FIX 3)
+    re.compile(r'>\s*/etc/passwd', re.IGNORECASE),                # overwrite passwd (FIX 3)
+    re.compile(r'>\s*/etc/shadow', re.IGNORECASE),                # overwrite shadow (FIX 3)
+    re.compile(r'curl.*\|\s*(bash|sh|zsh)', re.IGNORECASE),       # curl pipe to shell (FIX 3)
+    re.compile(r'wget.*-O.*\|\s*(bash|sh|zsh)', re.IGNORECASE),   # wget pipe to shell (FIX 3)
 ]
 OUTPUT_MAX_CHARS = 10_000   # troncature sortie commande
 
@@ -104,7 +110,10 @@ def is_blocked(cmd: str) -> bool:
             if base_cmd == 'rm' and len(tokens) > 1:
                 flags = [t for t in tokens if t.startswith('-')]
                 paths = [t for t in tokens if not t.startswith('-') and t != 'rm']
-                has_r = any('r' in f.lstrip('-').lower() for f in flags)
+                has_r = any(
+                    'r' in f.lstrip('-').lower() or f in ('--recursive', '--force')
+                    for f in flags
+                )  # FIX 1 — couvre --recursive et --force en long flags
                 is_sys_path = any(
                     p.startswith('/') and any(p.startswith(sp) for sp in ('/', '/etc', '/usr', '/bin', '/sbin', '/lib', '/var', '/System', '/Library'))
                     for p in paths
@@ -275,6 +284,7 @@ async def shell(req: ShellRequest):
 
     # 1. Vérification patterns bloqués
     if is_blocked(req.command):
+        print(f"[Executor] Commande bloquée — CMD: {req.command[:200]}")  # FIX 4
         return {
             "stdout": "",
             "stderr": f"Commande bloquée par sandbox: {req.command}",
@@ -295,7 +305,18 @@ async def shell(req: ShellRequest):
             "message": "Validation humaine requise — envoi Telegram HITL",
         }
 
-    cwd = req.cwd or os.path.expanduser("~/Desktop/PICO-RUCHE")
+    # FIX 2 — Validation cwd : restreint aux chemins sous HOME ou ROOT projet
+    if req.cwd:
+        cwd_path = Path(req.cwd).resolve()
+        allowed_roots = [Path.home(), ROOT]
+        if not any(str(cwd_path).startswith(str(r)) for r in allowed_roots):
+            return {
+                "stdout": "", "stderr": f"cwd non autorisé: {req.cwd}",
+                "returncode": -1, "blocked": True, "command": req.command
+            }
+        cwd = str(cwd_path)
+    else:
+        cwd = str(ROOT)
 
     # 3. Exécution avec timeout forcé ≤ 30s
     try:

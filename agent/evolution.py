@@ -8,15 +8,22 @@ import subprocess
 import asyncio
 import httpx
 import re
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import Optional, List
 import yaml
 from dotenv import load_dotenv
 from contextlib import asynccontextmanager
 load_dotenv()
+
+# FIX 1 — Locks par nom de skill pour éviter les écritures concurrentes
+_SKILL_LOCKS: dict[str, asyncio.Lock] = {}
+
+# FIX 2 — Executor dédié pour les tests (évite l'épuisement du pool global)
+_TEST_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="evolution_test")
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -72,7 +79,7 @@ async def run_tests() -> dict:
     try:
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(
-            None,
+            _TEST_EXECUTOR,
             lambda: subprocess.run(
                 ["npm", "test"], capture_output=True, text=True, timeout=120, cwd="."
             )
@@ -96,6 +103,10 @@ async def run_tests() -> dict:
 
 
 async def generate_skill(name: str, goal: str, examples: List[dict] = []) -> dict:
+    # FIX 3 — Validation du nom pour prévenir le path traversal
+    if not re.match(r'^[a-zA-Z0-9_\-]+$', name):
+        raise HTTPException(status_code=400, detail=f"Nom de skill invalide: {name}")
+
     async with httpx.AsyncClient(timeout=60) as c:
         r = await c.post(
             f"http://localhost:{CONFIG['ports']['brain']}/raw",
@@ -108,7 +119,20 @@ async def generate_skill(name: str, goal: str, examples: List[dict] = []) -> dic
     code = r.json().get("content", "")
     code = code.replace("```python", "").replace("```", "").strip()
     skill_file = SKILLS_DIR / f"{name}.py"
-    skill_file.write_text(code)
+
+    # FIX 1 — Verrou par nom de skill pour sérialiser les écritures concurrentes
+    if name not in _SKILL_LOCKS:
+        _SKILL_LOCKS[name] = asyncio.Lock()
+
+    # FIX 4 — Purge des locks obsolètes si le dictionnaire dépasse 100 entrées
+    if len(_SKILL_LOCKS) > 100:
+        to_delete = [k for k in list(_SKILL_LOCKS.keys()) if (SKILLS_DIR / f"{k}.py").exists()]
+        for k in to_delete:
+            _SKILL_LOCKS.pop(k, None)
+
+    async with _SKILL_LOCKS[name]:
+        skill_file.write_text(code)
+
     try:
         compile(code, str(skill_file), "exec")
         return {"created": True, "file": str(skill_file), "valid_syntax": True}

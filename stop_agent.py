@@ -147,49 +147,52 @@ def main():
     print("🛑 Arrêt PICO-RUCHE")
     print(bar)
 
-    # Étape 1 : arrêt via PID files
-    pid_results = kill_pids_from_files()
+    # FIX 5 : le nettoyage des PIDs est garanti même en cas d'exception
+    try:
+        # Étape 1 : arrêt via PID files
+        pid_results = kill_pids_from_files()
 
-    # Étape 2 : fallback lsof pour les ports encore occupés
-    if not pid_results:
-        print("  ℹ️  Pas de fichiers PID trouvés → fallback lsof")
+        # Étape 2 : fallback lsof pour les ports encore occupés
+        if not pid_results:
+            print("  ℹ️  Pas de fichiers PID trouvés → fallback lsof")
 
-    still_busy = [port for port in PORTS if port_in_use(port)]
-    if still_busy:
+        still_busy = [port for port in PORTS if port_in_use(port)]
+        if still_busy:
+            print()
+            print("  Ports encore occupés — nettoyage lsof...")
+            for port in still_busy:
+                kill_by_port_fallback(port)
+            time.sleep(1)
+
+        # Étape 3 : vérification finale des ports
         print()
-        print("  Ports encore occupés — nettoyage lsof...")
-        for port in still_busy:
-            kill_by_port_fallback(port)
-        time.sleep(1)
+        print("🔍 Vérification des ports...")
+        port_status = verify_ports()
 
-    # Étape 3 : vérification finale des ports
-    print()
-    print("🔍 Vérification des ports...")
-    port_status = verify_ports()
+        all_free = True
+        for port in PORTS:
+            name = LAYER_NAMES.get(port, f":{port}")
+            free = port_status.get(port, True)
+            icon = "✅" if free else "⚠️ "
+            state = "libre" if free else "encore occupé"
+            print(f"  {icon} :{port}  {name:<12} {state}")
+            if not free:
+                all_free = False
 
-    all_free = True
-    for port in PORTS:
-        name = LAYER_NAMES.get(port, f":{port}")
-        free = port_status.get(port, True)
-        icon = "✅" if free else "⚠️ "
-        state = "libre" if free else "encore occupé"
-        print(f"  {icon} :{port}  {name:<12} {state}")
-        if not free:
-            all_free = False
+        print()
+        print(bar)
+        if all_free:
+            print("✅ PICO-RUCHE arrêté — tous les ports sont libres")
+        else:
+            print("⚠️  PICO-RUCHE arrêté — certains ports sont encore occupés")
+            print("   Relancer : python3 stop_agent.py")
+        print()
 
-    # Nettoyage du répertoire .pids
-    if PIDS_DIR.exists():
-        for f in PIDS_DIR.glob("*.pid"):
-            f.unlink(missing_ok=True)
-
-    print()
-    print(bar)
-    if all_free:
-        print("✅ PICO-RUCHE arrêté — tous les ports sont libres")
-    else:
-        print("⚠️  PICO-RUCHE arrêté — certains ports sont encore occupés")
-        print("   Relancer : python3 stop_agent.py")
-    print()
+    finally:
+        # FIX 5 : nettoyage des PIDs garanti même en cas de crash
+        if PIDS_DIR.exists():
+            for f in PIDS_DIR.glob("*.pid"):
+                f.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

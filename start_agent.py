@@ -84,6 +84,7 @@ LAYERS = [
         "port": 8001,
         "desc": "boucle vitale 30s",
         "emoji": "👑",
+        "startup_delay": 3.0,  # FIX 3 : Queen dépend de toutes les couches → délai x2
     },
 ]
 
@@ -185,6 +186,7 @@ def start_layer(layer: dict) -> subprocess.Popen:
         "--log-level", "warning",
     ]
     p = subprocess.Popen(cmd, cwd=ROOT, stdout=log_fd, stderr=log_fd)
+    log_fd.close()  # FIX 1 : ferme le fd côté parent ; l'enfant garde le sien
     write_pid(layer["name"], p.pid)
     return p
 
@@ -245,6 +247,20 @@ def main():
     print("🐝 PICO-RUCHE v5.0.0 — 7 couches Python — Démarrage")
     print(bar)
 
+    # FIX 4 : vérifier les PID stales avant tout démarrage
+    if PIDS_DIR.exists():
+        for pid_file in PIDS_DIR.glob("*.pid"):
+            try:
+                pid = int(pid_file.read_text().strip())
+                try:
+                    os.kill(pid, 0)  # signal 0 = test d'existence uniquement
+                    layer_display = pid_file.stem.replace("_", " ").title()
+                    print(f"⚠️  Processus existant détecté PID {pid} ({layer_display}) — il sera remplacé")
+                except ProcessLookupError:
+                    pass  # PID mort, pas de souci
+            except (ValueError, OSError):
+                pass
+
     # 1. Vérifier ollama
     print("🔍 Vérification d'Ollama... ", end="", flush=True)
     if check_ollama():
@@ -277,7 +293,8 @@ def main():
             p = start_layer(layer)
             procs.append(p)
             # Pause entre les couches pour que le processus s'initialise
-            time.sleep(STARTUP_DELAY)
+            # FIX 3 : délai adaptatif — Queen reçoit startup_delay=3.0
+            time.sleep(layer.get("startup_delay", STARTUP_DELAY))
 
             ok, latency = check_health(port)
             if ok:
@@ -285,6 +302,16 @@ def main():
                 layer_status[name] = {"ok": True, "latency": latency, "port": port, "desc": desc}
             else:
                 print(f"⚠️  (timeout — processus démarré, health non confirmé)")
+                # FIX 2 : affiche les dernières lignes du log pour diagnostiquer
+                log_file = ROOT / "agent" / "logs" / f"{name.lower().replace(' ', '_')}.log"
+                try:
+                    log_content = log_file.read_text(encoding="utf-8", errors="replace")
+                    last_lines = log_content.strip().split("\n")[-5:]
+                    for line in last_lines:
+                        if line.strip():
+                            print(f"     LOG: {line.strip()[:120]}")
+                except Exception:
+                    pass
                 layer_status[name] = {"ok": False, "latency": 0, "port": port, "desc": desc}
 
         except Exception as exc:

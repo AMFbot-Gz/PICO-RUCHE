@@ -33,6 +33,7 @@ CLAUDE_MODEL = "claude-opus-4-6"
 # Circuit breaker : compte les échecs consécutifs par provider
 _provider_failures: dict = {"claude": 0, "kimi": 0, "openai": 0, "ollama": 0, "mlx": 0}
 _PROVIDER_MAX_FAILURES = 3   # après 3 échecs consécutifs, on skip ce provider
+_circuit_reset_count: int = 0  # compteur de resets consécutifs pour backoff exponentiel
 
 
 def claude_available() -> bool:
@@ -101,7 +102,10 @@ async def call_claude(messages: list, system: str = "") -> str:
         kwargs["system"] = system
     response = await client.messages.create(**kwargs)
     # Extraire uniquement les blocs texte (ignorer les blocs thinking)
-    return next((b.text for b in response.content if b.type == "text"), "")
+    text = next((b.text for b in response.content if b.type == "text"), "")
+    if not text.strip():
+        raise ValueError("Claude a retourné une réponse vide (aucun bloc texte)")
+    return text
 
 
 async def call_kimi(messages: list, system: str = "") -> str:
@@ -151,39 +155,65 @@ async def llm(role: str, messages: list, system: str = "") -> dict:
     Claude API prioritaire — Kimi → OpenAI en fallback.
     Un provider est mis en pause après _PROVIDER_MAX_FAILURES échecs consécutifs.
     """
+    global _circuit_reset_count
+
+    providers_tried = 0
+
     # 1. Claude API — pour tous les rôles
     if claude_available() and _provider_failures.get("claude", 0) < _PROVIDER_MAX_FAILURES:
+        print(f"[Brain] 🔄 Tentative provider: claude (failures: {_provider_failures.get('claude', 0)})")
         try:
             content = await call_claude(messages, system)
             _provider_failures["claude"] = 0   # reset on success
+            _circuit_reset_count = 0            # reset du backoff après succès
             return {"content": content, "provider": "claude", "model": CLAUDE_MODEL}
         except Exception as e:
             _provider_failures["claude"] = _provider_failures.get("claude", 0) + 1
             print(f"[Brain] Claude failed ({_provider_failures['claude']}/{_PROVIDER_MAX_FAILURES}): {e}")
+            providers_tried += 1
 
     # 2. Kimi — fallback cloud
     if os.environ.get("KIMI_API_KEY") and _provider_failures.get("kimi", 0) < _PROVIDER_MAX_FAILURES:
+        print(f"[Brain] 🔄 Tentative provider: kimi (failures: {_provider_failures.get('kimi', 0)})")
         try:
             content = await call_kimi(messages, system)
             _provider_failures["kimi"] = 0
+            _circuit_reset_count = 0
+            if providers_tried > 0:
+                print(f"[Brain] ✅ Fallback kimi réussi après {providers_tried} tentative(s)")
             return {"content": content, "provider": "kimi", "model": "moonshot-v1-8k"}
         except Exception as e:
             _provider_failures["kimi"] = _provider_failures.get("kimi", 0) + 1
             print(f"[Brain] Kimi failed ({_provider_failures['kimi']}/{_PROVIDER_MAX_FAILURES}): {e}")
+            providers_tried += 1
 
     # 3. OpenAI — fallback cloud secondaire
     if os.environ.get("OPENAI_API_KEY") and _provider_failures.get("openai", 0) < _PROVIDER_MAX_FAILURES:
+        print(f"[Brain] 🔄 Tentative provider: openai (failures: {_provider_failures.get('openai', 0)})")
         try:
             content = await call_openai(messages, system)
             _provider_failures["openai"] = 0
+            _circuit_reset_count = 0
+            if providers_tried > 0:
+                print(f"[Brain] ✅ Fallback openai réussi après {providers_tried} tentative(s)")
             return {"content": content, "provider": "openai", "model": os.environ.get("OPENAI_MODEL", "gpt-4o-mini")}
         except Exception as e:
             _provider_failures["openai"] = _provider_failures.get("openai", 0) + 1
             print(f"[Brain] OpenAI failed ({_provider_failures['openai']}/{_PROVIDER_MAX_FAILURES}): {e}")
+            providers_tried += 1
 
-    # Reset circuit breakers si tous ont échoué — pour ne pas bloquer définitivement
+    # Reset circuit breakers si tous ont échoué — avec backoff exponentiel pour éviter la boucle infinie
     if all(v >= _PROVIDER_MAX_FAILURES for v in _provider_failures.values() if v > 0):
-        print("[Brain] ⚠️  Tous les circuit breakers ouverts — reset forcé")
+        # Backoff : 1er reset immédiat, 2ème → 5s, 3ème+ → 30s
+        if _circuit_reset_count == 1:
+            print("[Brain] ⚠️  Tous les circuit breakers ouverts — backoff 5s avant reset")
+            await asyncio.sleep(5)
+        elif _circuit_reset_count >= 2:
+            print(f"[Brain] ⚠️  Tous les circuit breakers ouverts — backoff 30s avant reset (reset #{_circuit_reset_count + 1})")
+            await asyncio.sleep(30)
+        else:
+            print("[Brain] ⚠️  Tous les circuit breakers ouverts — reset immédiat")
+        _circuit_reset_count += 1
         for k in _provider_failures:
             _provider_failures[k] = 0
 
@@ -250,7 +280,7 @@ async def _async_load_skills_list() -> str:
 async def load_recent_learnings() -> str:
     """Charge les 3 derniers épisodes mémoire pour éviter de répéter les erreurs (C1)."""
     try:
-        async with httpx.AsyncClient(timeout=3) as c:
+        async with httpx.AsyncClient(timeout=8) as c:
             r = await c.get(f"http://localhost:{CONFIG['ports']['memory']}/episodes?limit=3")
             r.raise_for_status()
             episodes = r.json().get("episodes", [])
@@ -263,7 +293,8 @@ async def load_recent_learnings() -> str:
             result_short = ep.get("result", "")[:80]
             lines.append(f"  {flag} {mission_short} → {result_short}")
         return "\n".join(lines)
-    except Exception:
+    except Exception as e:
+        print(f"[Brain] load_recent_learnings error (couche memory indisponible): {e}")
         return ""
 
 
@@ -433,6 +464,8 @@ async def health():
         },
         "models": MODELS,
         "claude_model": CLAUDE_MODEL if claude_ok else None,
+        "circuit_breakers": {k: {"failures": v, "open": v >= _PROVIDER_MAX_FAILURES} for k, v in _provider_failures.items()},
+        "circuit_reset_count": _circuit_reset_count,
     }
 
 

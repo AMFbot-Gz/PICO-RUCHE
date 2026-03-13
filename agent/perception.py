@@ -26,6 +26,7 @@ app = FastAPI(title="PICO-RUCHE Perception", version="1.0.0")
 
 SCREENSHOT_PATH = Path("/tmp/pico_ruche_screen.png")
 LAST_HASH = {"screen": "", "timestamp": ""}
+_HASH_LOCK = asyncio.Lock()  # FIX 5 — protège LAST_HASH contre les race conditions
 
 
 def take_screenshot(region: Optional[str] = None) -> Path:
@@ -34,10 +35,14 @@ def take_screenshot(region: Optional[str] = None) -> Path:
         cmd = ["screencapture", "-x", "-R", region, str(SCREENSHOT_PATH)]
     else:
         cmd = ["screencapture", "-x", str(SCREENSHOT_PATH)]
-    result = subprocess.run(cmd, capture_output=True)
+    try:
+        result = subprocess.run(cmd, capture_output=True, timeout=10)  # FIX 7 — timeout 10s
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("screencapture a dépassé le timeout (10s)")
     if result.returncode != 0:
+        stderr_text = result.stderr.decode() if result.stderr else ""  # FIX 6 — decode sécurisé
         raise RuntimeError(
-            f"screencapture a échoué (code {result.returncode}): {result.stderr.decode()[:200]}"
+            f"screencapture a échoué (code {result.returncode}): {stderr_text[:200]}"
         )
     if not SCREENSHOT_PATH.exists():
         raise RuntimeError("screencapture n'a pas produit de fichier")
@@ -99,14 +104,16 @@ async def screenshot(region: Optional[str] = None):
     try:
         path = take_screenshot(region)
         new_hash = hash_file(path)
-        changed = new_hash != LAST_HASH["screen"]
-        LAST_HASH["screen"] = new_hash
-        LAST_HASH["timestamp"] = datetime.utcnow().isoformat()
+        async with _HASH_LOCK:  # FIX 5 — accès thread-safe à LAST_HASH
+            changed = new_hash != LAST_HASH["screen"]
+            LAST_HASH["screen"] = new_hash
+            LAST_HASH["timestamp"] = datetime.utcnow().isoformat()
+            timestamp = LAST_HASH["timestamp"]
         return {
             "path": str(path),
             "hash": new_hash,
             "changed": changed,
-            "timestamp": LAST_HASH["timestamp"],
+            "timestamp": timestamp,
             "error": None
         }
     except Exception as e:
@@ -138,9 +145,10 @@ async def full_observation():
     try:
         path = take_screenshot()
         new_hash = hash_file(path)
-        changed = new_hash != LAST_HASH["screen"]
-        LAST_HASH["screen"] = new_hash
-        LAST_HASH["timestamp"] = now
+        async with _HASH_LOCK:  # FIX 5 — accès thread-safe à LAST_HASH
+            changed = new_hash != LAST_HASH["screen"]
+            LAST_HASH["screen"] = new_hash
+            LAST_HASH["timestamp"] = now
         screen_info = {"changed": changed, "path": str(path), "hash": new_hash, "error": None}
     except Exception as e:
         screen_info["error"] = str(e)

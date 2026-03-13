@@ -60,16 +60,29 @@ mkdirSync(SCREENSHOTS_DIR, { recursive: true });
 // Calibration partagée pour la session
 let _calibration = { width: 1920, height: 1080, dpiScale: 1.0 };
 
-// Singleton robotjs (lazy)
+// FIX 5 — Robotjs initialisé eagerly au démarrage (évite race condition lazy singleton)
 let _robot = null;
+let _robotLoading = false;
+let _robotReady = false;
+
+// IIFE : démarre l'initialisation immédiatement au chargement du module
+(async () => {
+  _robotLoading = true;
+  try {
+    const mod = await import("@jitsi/robotjs");
+    _robot = mod.default || mod;
+    _robotReady = true;
+  } catch {
+    _robotReady = false;
+  } finally {
+    _robotLoading = false;
+  }
+})();
+
 async function getRobot() {
-  if (!_robot) {
-    try {
-      const mod = await import("@jitsi/robotjs");
-      _robot = mod.default || mod;
-    } catch {
-      _robot = null;
-    }
+  // Attendre que l'initialisation soit terminée avant de retourner
+  while (_robotLoading) {
+    await new Promise((r) => setTimeout(r, 50));
   }
   return _robot;
 }
@@ -184,6 +197,19 @@ async function handleOsControl(action, params = {}) {
       const bitmap = robot.screen.capture();
       const timestamp = Date.now();
       const filePath = join(SCREENSHOTS_DIR, `shot_${timestamp}.png`);
+
+      // FIX 6 — Rotation : supprimer les plus anciens si > 100 fichiers dans le répertoire temp
+      try {
+        const existing = readdirSync(SCREENSHOTS_DIR)
+          .filter((f) => f.startsWith("shot_") && f.endsWith(".png"))
+          .sort();
+        if (existing.length >= 100) {
+          const toDelete = existing.slice(0, existing.length - 99);
+          for (const f of toDelete) {
+            try { rmSync(join(SCREENSHOTS_DIR, f)); } catch {}
+          }
+        }
+      } catch {}
 
       if (!Jimp) {
         return {
@@ -943,6 +969,27 @@ return winList`);
   }
 }
 
+// ─── FIX 7 — Rate limiting en mémoire pour les endpoints MCP critiques ────────
+const _rateLimits = new Map();
+
+/**
+ * Vérifie si la clé dépasse maxPerSec requêtes par seconde.
+ * @param {string} key
+ * @param {number} maxPerSec
+ * @returns {boolean} true si la requête est autorisée
+ */
+function checkRateLimit(key, maxPerSec = 10) {
+  const now = Date.now();
+  const entry = _rateLimits.get(key) || { count: 0, reset: now + 1000 };
+  if (now > entry.reset) {
+    entry.count = 0;
+    entry.reset = now + 1000;
+  }
+  entry.count++;
+  _rateLimits.set(key, entry);
+  return entry.count <= maxPerSec;
+}
+
 // ─── Montage des routes sur l'app Hono ────────────────────────────────────────
 
 /**
@@ -951,6 +998,11 @@ return winList`);
 export function createMcpRoutes(app) {
   // ── POST /mcp/os-control ─────────────────────────────────────────────────────
   app.post("/mcp/os-control", async (c) => {
+    // FIX 7 — Rate limit : max 10 req/s sur os-control
+    const clientIp = c.req.header("x-forwarded-for") || "local";
+    if (!checkRateLimit(`os-control:${clientIp}`, 10)) {
+      return c.json({ success: false, error: "Rate limit dépassé (max 10 req/s)", code: "RATE_LIMIT" }, 429);
+    }
     const body = await parseBody(c);
     if (!body) return mcpError(c, "Body JSON invalide");
     const { action, params = {} } = body;

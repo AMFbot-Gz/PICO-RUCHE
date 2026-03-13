@@ -32,6 +32,13 @@ if not EPISODE_FILE.exists():
 if not WORLD_STATE_FILE.exists():
     WORLD_STATE_FILE.write_text("{}")
 
+# CORRECTION 1 — Verrou asyncio pour protéger EPISODE_FILE contre les
+# accès concurrents (race condition en lecture/écriture/trim).
+_FILE_LOCK = asyncio.Lock()
+
+# CORRECTION 2 — Compteur de lignes JSON corrompues détectées.
+_corruption_count = 0
+
 
 class Episode(BaseModel):
     mission: str
@@ -49,7 +56,13 @@ class WorldStateUpdate(BaseModel):
 
 
 def _read_episodes_safe(filepath: Path) -> list:
-    """Lit episodes.jsonl en sautant les lignes corrompues."""
+    """Lit episodes.jsonl en sautant les lignes corrompues.
+    CORRECTION 2 : incrémente _corruption_count et loggue une alerte si >10.
+    NOTE : cette fonction doit être appelée depuis un contexte déjà protégé
+    par _FILE_LOCK (voir GET /episodes) ou depuis un contexte où la concurrence
+    n'est pas un risque (health, profile, search — lecture seule légère).
+    """
+    global _corruption_count
     episodes = []
     if not filepath.exists():
         return episodes
@@ -60,14 +73,22 @@ def _read_episodes_safe(filepath: Path) -> list:
         try:
             episodes.append(json.loads(line))
         except json.JSONDecodeError as e:
+            _corruption_count += 1
             print(f"[Memory] Ligne corrompue ignorée: {e} — {line[:80]}")
+            # CORRECTION 2 — Alerte visible si trop de corruptions
+            if _corruption_count > 10:
+                print(
+                    f"[Memory] ⚠️ ALERTE: {_corruption_count} lignes corrompues "
+                    f"détectées dans {filepath.name}"
+                )
+                _corruption_count = 0  # Réinitialisation après l'alerte
     return episodes
 
 
-async def _trim_episodes_if_needed(filepath: Path, max_ep: int) -> None:
-    """Tronque le fichier JSONL aux max_ep épisodes les plus récents.
-    Avant de tronquer, archive les épisodes supprimés dans episodes_archive.jsonl
-    pour ne pas perdre l'apprentissage (correction critique 5.2).
+async def _trim_unlocked(filepath: Path, max_ep: int) -> None:
+    """Version interne du trim — doit être appelée depuis un contexte
+    déjà protégé par _FILE_LOCK (pas de re-lock pour éviter le deadlock).
+    CORRECTION 3 : écriture atomique via fichier temporaire + os.replace.
     """
     try:
         if not filepath.exists():
@@ -88,7 +109,11 @@ async def _trim_episodes_if_needed(filepath: Path, max_ep: int) -> None:
         except Exception as arch_err:
             print(f"[Memory] ⚠️  Archive error (non-bloquant): {arch_err}")
 
-        filepath.write_text("\n".join(kept) + "\n", encoding="utf-8")
+        # CORRECTION 3 — Écriture atomique : .tmp puis os.replace
+        tmp_path = filepath.with_suffix(".tmp")
+        tmp_path.write_text("\n".join(kept) + "\n", encoding="utf-8")
+        os.replace(tmp_path, filepath)
+
         print(f"[Memory] 🗑️  Trim épisodes: {len(lines)} → {len(kept)} (archivés: {len(to_archive)})")
     except Exception as e:
         print(f"[Memory] ⚠️  Trim error: {e}")
@@ -96,24 +121,30 @@ async def _trim_episodes_if_needed(filepath: Path, max_ep: int) -> None:
 
 @app.post("/episode")
 async def save_episode(episode: Episode):
-    entry = {
-        "timestamp": datetime.utcnow().isoformat(),
-        **episode.model_dump()
-    }
-    with open(EPISODE_FILE, "a", encoding="utf-8") as f:
-        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-    # Troncature en tâche background — non bloquante
-    asyncio.create_task(_trim_episodes_if_needed(EPISODE_FILE, MAX_EPISODES))
-    if episode.learned:
-        with open(PERSISTENT_FILE, "a", encoding="utf-8") as f:
-            f.write(f"\n### {datetime.utcnow().strftime('%Y-%m-%d %H:%M')} — Apprentissage\n{episode.learned}\n")
-    episodes = _read_episodes_safe(EPISODE_FILE)
+    # CORRECTION 1 — Toute l'opération write + trim est protégée par le lock.
+    async with _FILE_LOCK:
+        entry = {
+            "timestamp": datetime.utcnow().isoformat(),
+            **episode.model_dump()
+        }
+        with open(EPISODE_FILE, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        # Trim appelé directement (pas via create_task) — déjà sous lock,
+        # on utilise _trim_unlocked pour éviter le deadlock.
+        await _trim_unlocked(EPISODE_FILE, MAX_EPISODES)
+        if episode.learned:
+            with open(PERSISTENT_FILE, "a", encoding="utf-8") as f:
+                f.write(f"\n### {datetime.utcnow().strftime('%Y-%m-%d %H:%M')} — Apprentissage\n{episode.learned}\n")
+        episodes = _read_episodes_safe(EPISODE_FILE)
     return {"saved": True, "total_episodes": len(episodes)}
 
 
 @app.get("/episodes")
 async def get_episodes(limit: int = 20):
-    episodes = _read_episodes_safe(EPISODE_FILE)
+    # CORRECTION 4 — Lecture protégée par le lock pour éviter une lecture
+    # pendant un trim en cours.
+    async with _FILE_LOCK:
+        episodes = _read_episodes_safe(EPISODE_FILE)
     return {"episodes": list(reversed(episodes[-limit:]))}
 
 

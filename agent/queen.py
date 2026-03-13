@@ -66,8 +66,9 @@ HITL_QUEUE: Dict[str, Dict[str, Any]] = {}
 
 HITL_TIMEOUT = int(CONFIG.get("telegram", {}).get("hitl_timeout_seconds", 120))
 
-# Verrous asyncio — initialisés dans lifespan() pour éviter RuntimeError (fix #1)
-HITL_LOCK: asyncio.Lock | None = None
+# Verrous asyncio — HITL_LOCK initialisé au niveau module (correction bug #3)
+# DB_LOCK reste None car il dépend de l'event loop actif (initialisé dans lifespan)
+HITL_LOCK: asyncio.Lock = asyncio.Lock()
 DB_LOCK: asyncio.Lock | None = None
 
 # Throttle pour la boucle vitale (fix #9)
@@ -440,6 +441,19 @@ def _extract_json(text: str) -> dict:
     return {}
 
 
+async def _run_and_cleanup(action_str: str, active_missions: set) -> None:
+    """Exécute une mission autonome et garantit le cleanup dans _active_vital_missions.
+
+    Extraite hors de la boucle (correction bug #2) pour éviter les fuites de closure
+    et permettre un shutdown propre. Le finally garantit le cleanup même si
+    execute_mission crash (correction bug #6).
+    """
+    try:
+        await execute_mission(action_str, auto=True)
+    finally:
+        active_missions.discard(action_str)  # correction bug #6 : cleanup garanti même sur crash
+
+
 async def _vital_loop_guardian():
     """Lance vital_loop et la relance automatiquement si elle crash (Bloquant 4)."""
     while VITAL_LOOP_RUNNING:
@@ -459,6 +473,7 @@ async def vital_loop():
     print(f"[Queen] Boucle vitale démarrée — premier cycle dans {startup_delay}s, puis toutes les {_base_interval}s")
     await asyncio.sleep(startup_delay)
     while VITAL_LOOP_RUNNING:
+        data = {}  # correction bug #1 : data initialisée avant le try pour éviter NameError si Perception est down
         try:
             async with httpx.AsyncClient(timeout=15) as c:
                 obs = await c.post(f"http://localhost:{PORTS['perception']}/observe")
@@ -512,12 +527,8 @@ async def vital_loop():
                         _anomaly_cooldown[cooldown_key] = now_ts
                         _active_vital_missions.add(action_str)
                         print(f"[Queen] Action autonome: {action_str}")
-                        async def _run_and_cleanup(act: str = action_str):
-                            try:
-                                await execute_mission(act, auto=True)
-                            finally:
-                                _active_vital_missions.discard(act)
-                        asyncio.create_task(_run_and_cleanup())
+                        # correction bug #2 : appel de la fonction extraite au lieu de la redéfinir
+                        asyncio.create_task(_run_and_cleanup(action_str, _active_vital_missions))
                 elif dec.get("should_act") and dec.get("risk") in ["medium", "high"]:
                     # Throttle 5 minutes par action similaire (fix #9)
                     throttle_key = f"vital:{dec.get('action', '')[:50]}"
@@ -537,6 +548,13 @@ async def vital_loop():
                         )
         except Exception as e:
             print(f"[Queen] Boucle vitale erreur: {e}")
+
+        # ─── Purge des entrées expirées de _anomaly_cooldown (correction bug #7) ─
+        # Évite la croissance infinie du dict — supprime les clés inactives depuis >10 min
+        _purge_ts = time.monotonic()
+        _expired_keys = [k for k, v in _anomaly_cooldown.items() if _purge_ts - v > 600]
+        for _k in _expired_keys:
+            del _anomaly_cooldown[_k]
 
         # ─── Heartbeat mémoire — toutes les 4 cycles (≈2 min) ──────────────────
         _vital_loop_cycle += 1
@@ -568,7 +586,7 @@ async def vital_loop():
             _interval = 300  # 5 min la nuit
         elif _vital_loop_cycle % 3 == 0:
             # Vérifier si machine idle (CPU < 5% selon obs précédente)
-            _cpu = data.get("system", {}).get("cpu_percent", 50) if 'data' in dir() else 50
+            _cpu = data.get("system", {}).get("cpu_percent", 50) if data else 50  # correction bug #4 : 'data' in dir() est toujours True
             _interval = 300 if _cpu < 5 else _base_interval
         else:
             _interval = _base_interval
@@ -741,7 +759,10 @@ async def execute_mission(input_text: str, auto: bool = False) -> dict:
         }
     except Exception as e:
         duration_ms = int((_now_utc() - start).total_seconds() * 1000)
-        await save_mission(mission_id, input_text, "failed", result=str(e), duration_ms=duration_ms)
+        try:  # correction bug #5 : save_mission dans le bloc except ne doit pas propager une exception
+            await save_mission(mission_id, input_text, "failed", result=str(e), duration_ms=duration_ms)
+        except Exception as _save_err:
+            print(f"[Queen] execute_mission: save_mission failed in except block: {_save_err}")
         return {"mission_id": mission_id, "status": "failed", "error": str(e)}
     finally:
         _active_missions = max(0, _active_missions - 1)
@@ -751,9 +772,9 @@ async def execute_mission(input_text: str, auto: bool = False) -> dict:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global HITL_LOCK, DB_LOCK, VITAL_LOOP_RUNNING
-    # Initialisation des locks dans l'event loop (fix #1)
-    HITL_LOCK = asyncio.Lock()
+    global DB_LOCK, VITAL_LOOP_RUNNING
+    # DB_LOCK initialisé ici dans l'event loop actif (fix #1)
+    # HITL_LOCK est déjà initialisé au niveau module (correction bug #3)
     DB_LOCK = asyncio.Lock()
     await init_db()
     _validate_env()  # Validation des variables d'environnement (fix #7)

@@ -5,6 +5,8 @@ Chaque outil MCP dispose maintenant d'un endpoint dédié sur :3000/mcp/<tool>.
 """
 import httpx
 import json
+import os
+import asyncio
 from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
@@ -21,7 +23,12 @@ with open(ROOT / "agent_config.yml") as f:
 app = FastAPI(title="PICO-RUCHE MCP Bridge", version="2.0.0")
 
 MCP_BASE = CONFIG["mcp"]["node_base_url"]
-MCP_TIMEOUT = CONFIG["mcp"]["timeout"]
+# FIX 5 — Timeout borné entre 5 et 60s (empêche des valeurs aberrantes depuis l'env)
+MCP_TIMEOUT = max(5, min(60, int(os.environ.get("MCP_TIMEOUT", str(CONFIG["mcp"]["timeout"])))))
+
+# Port Node.js extrait depuis MCP_BASE pour le ping /health
+_node_base_parts = MCP_BASE.rstrip("/").rsplit(":", 1)
+NODE_PORT = int(_node_base_parts[-1]) if _node_base_parts[-1].isdigit() else 3000
 
 # Mapping outil → endpoint /mcp/<tool>
 # Construit dynamiquement à partir de agent_config.yml (section mcp.tools)
@@ -47,15 +54,21 @@ async def call_mcp(tool: str, action: str, params: dict = {}) -> dict:
     url = f"{MCP_BASE}{endpoint}"
     payload = {"action": action, "params": params}
 
-    async with httpx.AsyncClient(timeout=MCP_TIMEOUT) as c:
+    # FIX 6 — Retry avec backoff de 2s sur ConnectError ou timeout
+    for attempt in range(2):
         try:
-            r = await c.post(url, json=payload)
-            r.raise_for_status()
-            return r.json()
-        except httpx.ConnectError:
+            async with httpx.AsyncClient(timeout=MCP_TIMEOUT) as c:
+                r = await c.post(url, json=payload)
+                r.raise_for_status()
+                return r.json()
+        except (httpx.ConnectError, httpx.TimeoutException) as e:
+            if attempt == 0:
+                await asyncio.sleep(2)
+                continue
             return {
-                "error": "Node.js queen non démarrée",
+                "error": "Node.js queen non démarrée ou timeout",
                 "hint": "npm start dans PICO-RUCHE ou STANDALONE_MODE=true node src/queen_oss.js",
+                "detail": str(e),
             }
         except httpx.HTTPStatusError as e:
             return {"error": f"HTTP {e.response.status_code}: {e.response.text[:200]}"}
@@ -268,9 +281,19 @@ async def health():
         except Exception as e:
             mcp_error = str(e)
 
+    # FIX 7 — Ping dédié GET /api/health pour confirmer que la queen répond
+    try:
+        async with httpx.AsyncClient(timeout=3) as c:
+            r = await c.get(f"http://localhost:{NODE_PORT}/api/health")
+            node_ok = r.status_code == 200
+    except Exception:
+        node_ok = False
+
     return {
         "status": "ok",
         "layer": "mcp_bridge",
+        "node_queen_alive": node_ok,
+        "node_port": NODE_PORT,
         "mcp_node_available": mcp_ok,
         "mcp_base_url": MCP_BASE,
         "mcp_endpoints_active": len(mcp_endpoints),

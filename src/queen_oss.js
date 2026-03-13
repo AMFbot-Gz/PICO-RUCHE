@@ -11,6 +11,7 @@ import { Telegraf } from "telegraf";
 import { WebSocketServer } from "ws";
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
 import { join, dirname } from "path";
+import { readdir, stat, unlink } from "fs/promises";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 import { ask, autoDetectRoles, printRoles } from "./model_router.js";
@@ -29,7 +30,13 @@ dotenv.config();
 
 // Init swarm au démarrage (non-bloquant)
 try {
-  import('../swarm/index.js').then(({ initSwarm }) => initSwarm()).catch(() => {});
+  import('../swarm/index.js').then(({ initSwarm }) => initSwarm())
+    // FIX 1 — Log silencieux conditionnel (swarm optionnel)
+    .catch((err) => {
+      if (process.env.LOG_LEVEL === 'debug') {
+        console.warn('[Queen] silent error:', err.message);
+      }
+    });
 } catch {
   // swarm optionnel — ignoré silencieusement si indisponible
 }
@@ -82,7 +89,8 @@ export function loadMissions() {
 }
 
 export function saveMission(entry) {
-  _missionsCache = [entry, ...loadMissions()].slice(0, 200);
+  // FIX 2 — Mise à jour directe du cache mémoire sans relecture disque (évite race condition)
+  _missionsCache = [entry, ...(_missionsCache || [])].slice(0, 200);
   _missionsCacheTs = Date.now(); // Réinitialise le TTL après écriture
   try {
     writeFileSync(MISSIONS_FILE, JSON.stringify(_missionsCache, null, 2));
@@ -106,6 +114,23 @@ export const safeParseJSON = (text, fallback) => {
     return fallback;
   }
 };
+
+// ─── FIX 4 — Cleanup automatique des screenshots (> 24h) ─────────────────────
+const SCREENSHOTS_DIR = join(ROOT, ".laruche/temp/screenshots");
+
+async function cleanupOldScreenshots(dir, maxAgeMs = 24 * 60 * 60 * 1000) {
+  try {
+    const files = await readdir(dir).catch(() => []);
+    const now = Date.now();
+    for (const f of files) {
+      const fp = join(dir, f);
+      const s = await stat(fp).catch(() => null);
+      if (s && (now - s.mtimeMs) > maxAgeMs) {
+        await unlink(fp).catch(() => {});
+      }
+    }
+  } catch {}
+}
 
 // ─── HUD Service (WebSocket) ──────────────────────────────────────────────────────────────────
 // IMPORTANT: Le serveur WS est créé dans startHUDServer() (appelé en bas du fichier,
@@ -166,7 +191,13 @@ export function broadcastHUD(event) {
         : JSON.stringify({ type: 'batch', events: batch });
       hudClients.forEach((ws) => {
         if (ws.readyState === 1) {
-          try { ws.send(payload); } catch {}
+          // FIX 3 — Gestion d'erreur WebSocket send avec suppression du client mort
+          try {
+            ws.send(payload);
+          } catch (err) {
+            console.warn('[HUD] WebSocket send failed, removing client:', err.message);
+            hudClients.delete(ws);
+          }
         }
       });
     }, 50);
@@ -321,7 +352,8 @@ Réponse courte et directe.`;
         model_used: mission.models_used.join(','),
         skills_used: [],
       }),
-    }).catch(() => {});
+    // FIX 1 — Loggue toujours les erreurs de sauvegarde d'épisode (appel mémoire critique)
+    }).catch((err) => console.warn('[Queen] ⚠️  Episode non sauvegardé:', err.message));
 
     return `${synthesis.text}\n\n_⏱ ${(mission.duration_ms / 1000).toFixed(1)}s — Modèles: ${mission.models_used.join(", ")}_`;
   } catch (err) {
@@ -406,7 +438,12 @@ async function runComputerUseMission(command, missionId) {
       // Mémoire épisodique — enregistre l'expérience de la mission
       import('../memory/episodic/index.js').then(({ storeEpisode }) => {
         storeEpisode({ mission: command, actions: [], outcome: 'success', rewardScore: 1.0, lessons: [] });
-      }).catch(() => {});
+      // FIX 1 — Log silencieux conditionnel (module optionnel)
+      }).catch((err) => {
+        if (process.env.LOG_LEVEL === 'debug') {
+          console.warn('[Queen] silent error:', err.message);
+        }
+      });
       return summary;
     }
 
@@ -456,7 +493,12 @@ async function runComputerUseMission(command, missionId) {
         rewardScore: result.success ? 1.0 : 0.5,
         lessons: [],
       });
-    }).catch(() => {});
+    // FIX 1 — Log silencieux conditionnel (module optionnel)
+    }).catch((err) => {
+      if (process.env.LOG_LEVEL === 'debug') {
+        console.warn('[Queen] silent error:', err.message);
+      }
+    });
 
     return summary;
 
@@ -473,7 +515,12 @@ async function runComputerUseMission(command, missionId) {
     // Mémoire épisodique — enregistre l'échec
     import('../memory/episodic/index.js').then(({ storeEpisode }) => {
       storeEpisode({ mission: command, actions: [], outcome: 'error', rewardScore: 0.0, lessons: [] });
-    }).catch(() => {});
+    // FIX 1 — Log silencieux conditionnel (module optionnel)
+    }).catch((err) => {
+      if (process.env.LOG_LEVEL === 'debug') {
+        console.warn('[Queen] silent error:', err.message);
+      }
+    });
 
     throw err;
   }
@@ -522,6 +569,10 @@ logger.info("╚═════════════════════�
 // Vérifie Ollama avant de démarrer l'API (Wave 2 — abstraction LLM)
 await checkOllamaHealth();
 
+// FIX 4 — Cleanup screenshots au démarrage + toutes les heures
+cleanupOldScreenshots(SCREENSHOTS_DIR);
+setInterval(() => cleanupOldScreenshots(SCREENSHOTS_DIR), 60 * 60 * 1000).unref();
+
 // Démarrage du serveur HUD WebSocket (après validation config, avec gestion EADDRINUSE)
 wss = startHUDServer();
 logger.info(`📡 HUD WebSocket en écoute sur port ${CONFIG.HUD_PORT}`);
@@ -530,7 +581,12 @@ await printRoles();
 
 autoDetectRoles()
   .then((roles) => logger.info(`✅ Rôles préchaufés: ${Object.values(roles).join(", ")}`))
-  .catch(() => {});
+  // FIX 1 — Log silencieux conditionnel (préchauffage optionnel)
+  .catch((err) => {
+    if (process.env.LOG_LEVEL === 'debug') {
+      console.warn('[Queen] silent error:', err.message);
+    }
+  });
 
 try {
   startCronRunner();
@@ -662,8 +718,21 @@ export async function run(params) {
         );
         saveMission({ command: text, status: pipelineResult.success ? "success" : "partial", duration: pipelineResult.duration, ts: new Date().toISOString() });
         import("./memory_store.js")
-          .then(({ storeMissionMemory }) => { storeMissionMemory(pipelineResult).catch(() => {}); })
-          .catch(() => {});
+          .then(({ storeMissionMemory }) => {
+            storeMissionMemory(pipelineResult)
+              // FIX 1 — Log silencieux conditionnel (mémoire non bloquante)
+              .catch((err) => {
+                if (process.env.LOG_LEVEL === 'debug') {
+                  console.warn('[Queen] silent error:', err.message);
+                }
+              });
+          })
+          // FIX 1 — Log silencieux conditionnel (module optionnel)
+          .catch((err) => {
+            if (process.env.LOG_LEVEL === 'debug') {
+              console.warn('[Queen] silent error:', err.message);
+            }
+          });
       } else {
         const result = await butterflyLoop(text, (msg, opts) => ctx.reply(msg, opts));
         for (const chunk of splitMsg(result)) await ctx.reply(chunk, { parse_mode: "Markdown" });
