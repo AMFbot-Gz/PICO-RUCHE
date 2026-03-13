@@ -31,6 +31,31 @@ LaRuche est un **OS agentique multi-couches** qui transforme un Mac en système 
 
 ---
 
+## Quick Start (5 minutes)
+
+1. `cp .env.example .env` et remplir `TELEGRAM_BOT_TOKEN` (optionnel — requis pour Telegram)
+2. `make preflight` — vérifie ollama + modèles requis
+3. `make install` — installe les dépendances Python et Node.js
+4. `make start` — démarre l'essaim (7 couches)
+5. `make status` — vérifie que tout tourne
+6. Telegram : `/status` → reçoit l'état en temps réel
+
+> **Mode sans Telegram** : mettre `STANDALONE_MODE=true` dans `.env` — la queen
+> est alors disponible sur `http://localhost:8001` sans bot configuré.
+
+```bash
+# Raccourcis Makefile
+make preflight   # vérifie les prérequis
+make install     # installe les dépendances
+make start       # démarre PICO-RUCHE
+make status      # état de santé des 7 couches
+make stop        # arrêt propre (graceful)
+make logs        # tail -f des logs en direct
+make clean       # supprime PIDs et logs
+```
+
+---
+
 ## Prérequis
 
 ```bash
