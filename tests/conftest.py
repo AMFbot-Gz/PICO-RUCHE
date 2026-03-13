@@ -1,8 +1,12 @@
 """Fixtures partagées pour tous les tests PICO-RUCHE."""
 import pytest
+import pytest_asyncio
 import asyncio
 import sys
 import os
+
+# Active le mode asyncio automatique pour tous les tests async
+pytest_plugins = ['pytest_asyncio']
 
 # Ajoute agent/ au path pour les imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
