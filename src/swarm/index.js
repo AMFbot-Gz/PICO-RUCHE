@@ -16,3 +16,10 @@ export { selectNode, callOnNode } from './nodeRouter.js';
 export async function initSwarm() {
   await nodeRegistry.init();
 }
+
+/**
+ * Retourne les statistiques globales du swarm (nombre de nœuds, actifs, jobs).
+ */
+export async function getSwarmStats() {
+  return nodeRegistry.stats();
+}

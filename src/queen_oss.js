@@ -21,14 +21,18 @@ import { startCronRunner } from "./cron_runner.js";
 import { isStandaloneMode, startStandaloneServer } from "./modes/standalone.js";
 import { updateMission, appendMissionEvent } from "./api/missions.js";
 import { runIntentPipeline, isComputerUseIntent } from "./agents/intentPipeline.js";
-import { learn, memoryStats } from "./learning/missionMemory.js";
+import { learn } from "./learning/missionMemory.js";
 import { missionQueue } from "./missionQueue.js";
 import { subagentManager } from "./subagents/index.js";
 
 dotenv.config();
 
 // Init swarm au démarrage (non-bloquant)
-import('../swarm/index.js').then(({ initSwarm }) => initSwarm()).catch(() => {});
+try {
+  import('../swarm/index.js').then(({ initSwarm }) => initSwarm()).catch(() => {});
+} catch {
+  // swarm optionnel — ignoré silencieusement si indisponible
+}
 
 // ─── Mode Autonome Total : HITL auto-approve en standalone ────────────────────
 if (!process.env.HITL_AUTO_APPROVE) {
@@ -309,6 +313,20 @@ Réponse courte et directe.`;
         completedAt: mission.completed_at,
       });
     }
+
+    // Sync épisode vers la couche mémoire Python (non-bloquant)
+    fetch('http://localhost:8006/episode', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        mission: command,
+        result: synthesis.text.slice(0, 500),
+        success: true,
+        duration_ms: mission.duration_ms,
+        model_used: mission.models_used.join(','),
+        skills_used: [],
+      }),
+    }).catch(() => {});
 
     return `${synthesis.text}\n\n_⏱ ${(mission.duration_ms / 1000).toFixed(1)}s — Modèles: ${mission.models_used.join(", ")}_`;
   } catch (err) {

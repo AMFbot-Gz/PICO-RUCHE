@@ -1,0 +1,16 @@
+{
+  "name": "telegram_notify",
+  "description": "Envoie un message Telegram via BOT_TOKEN + CHAT_ID (variables d'env)",
+  "version": "1.0.0",
+  "params": {
+    "text": "string (required) — contenu du message",
+    "parse_mode": "string (default: 'Markdown') — format : Markdown, MarkdownV2 ou HTML"
+  },
+  "returns": {
+    "sent": "boolean — true si le message a été envoyé",
+    "message_id": "number — identifiant du message Telegram (si sent=true)",
+    "error": "string — message d'erreur si sent=false"
+  },
+  "env_required": ["BOT_TOKEN", "CHAT_ID"],
+  "created": "2026-03-13T00:00:00.000Z"
+}

@@ -33,7 +33,7 @@ export default {
         PORT: 3000,
         API_PORT: 3000,
         HUD_PORT: 9001,
-        STANDALONE_MODE: "true",
+        STANDALONE_MODE: "false",
         HITL_AUTO_APPROVE: "true",
         LARUCHE_MODE: MODE,
         QUEEN_MAX_PARALLEL: 3,
@@ -45,7 +45,7 @@ export default {
         PORT: 3000,
         API_PORT: 3000,
         HUD_PORT: 9001,
-        STANDALONE_MODE: "true",
+        STANDALONE_MODE: "false",
         HITL_AUTO_APPROVE: "true",
         LARUCHE_MODE: "balanced",
         LOG_LEVEL: "debug",
@@ -89,5 +89,13 @@ export default {
     // ── PICO extensions ──────────────────────────────────────────────────────
     { name: 'pico-compressor', script: 'mcp_servers/mcp-compressor/index.js', watch: false, autorestart: true },
     { name: 'pico-context-manager', script: 'mcp_servers/mcp-context-manager/index.js', watch: false, autorestart: true },
+    // ── Python agents ────────────────────────────────────────────────────────
+    { name: 'pico-queen-py', script: 'agent/queen.py', interpreter: 'python3', watch: false, autorestart: true, cwd: './' },
+    { name: 'pico-mcp-bridge', script: 'agent/mcp_bridge.py', interpreter: 'python3', watch: false, autorestart: true, cwd: './' },
+    { name: 'pico-brain', script: 'agent/brain.py', interpreter: 'python3', watch: false, autorestart: true, cwd: './' },
+    { name: 'pico-perception', script: 'agent/perception.py', interpreter: 'python3', watch: false, autorestart: true, cwd: './' },
+    { name: 'pico-memory', script: 'agent/memory.py', interpreter: 'python3', watch: false, autorestart: true, cwd: './' },
+    { name: 'pico-executor', script: 'agent/executor.py', interpreter: 'python3', watch: false, autorestart: true, cwd: './' },
+    { name: 'pico-evolution', script: 'agent/evolution.py', interpreter: 'python3', watch: false, autorestart: true, cwd: './' },
   ],
 };

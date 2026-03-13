@@ -19,16 +19,46 @@ MCP_TIMEOUT = CONFIG["mcp"]["timeout"]
 
 
 async def call_mcp(tool: str, action: str, params: dict = {}) -> dict:
-    endpoint = next((t["endpoint"] for t in CONFIG["mcp"]["tools"] if t["name"] == tool), None)
-    if not endpoint:
-        raise HTTPException(status_code=404, detail=f"Outil MCP inconnu: {tool}")
+    """
+    Proxy vers l'API REST Node.js queen (http://localhost:3000).
+    Les MCP servers utilisent stdio — on passe par les endpoints REST existants
+    plutôt que de tenter un appel HTTP direct aux serveurs MCP.
+    """
+    # Mapping outil/action → endpoint REST Node.js queen
+    route_map = {
+        ("os-control", "click"):          ("POST", "/api/mission"),
+        ("os-control", "typeText"):       ("POST", "/api/mission"),
+        ("os-control", "screenshot"):     ("POST", "/api/mission"),
+        ("terminal", "execSafe"):         ("POST", "/api/mission"),
+        ("vision", "analyzeScreen"):      ("POST", "/api/mission"),
+        ("vault", "storeExperience"):     ("POST", "/api/mission"),
+        ("vault", "findSimilar"):         ("POST", "/api/mission"),
+        ("rollback", "createSnapshot"):   ("POST", "/api/mission"),
+        ("skill-factory", "create"):      ("POST", "/api/mission"),
+        ("janitor", "clean"):             ("POST", "/api/mission"),
+    }
+
+    route = route_map.get((tool, action))
+    if not route:
+        # Tentative générique : POST /api/mission avec la description de l'action
+        route = ("POST", "/api/mission")
+
+    method, path = route
+
+    # Construit une commande lisible pour la mission Node.js
+    command = params.get("command") or params.get("query") or f"{tool}/{action}: {params}"
+    payload = {"command": command}
+
     async with httpx.AsyncClient(timeout=MCP_TIMEOUT) as c:
         try:
-            r = await c.post(f"{MCP_BASE}{endpoint}/{action}", json=params)
+            if method == "POST":
+                r = await c.post(f"{MCP_BASE}{path}", json=payload)
+            else:
+                r = await c.get(f"{MCP_BASE}{path}", params=payload)
             r.raise_for_status()
             return r.json()
         except httpx.ConnectError:
-            return {"error": "MCP Node.js non démarré", "hint": "npm start dans PICO-RUCHE"}
+            return {"error": "Node.js queen non démarrée", "hint": "npm start dans PICO-RUCHE"}
         except Exception as e:
             return {"error": str(e)}
 
@@ -93,7 +123,7 @@ async def list_tools():
 async def health():
     try:
         async with httpx.AsyncClient(timeout=2) as c:
-            r = await c.get(f"{MCP_BASE}/health")
+            r = await c.get(f"{MCP_BASE}/api/health")
             mcp_ok = r.status_code == 200
     except Exception:
         mcp_ok = False

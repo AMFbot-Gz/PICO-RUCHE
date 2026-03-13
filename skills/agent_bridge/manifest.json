@@ -1,0 +1,17 @@
+{
+  "name": "agent_bridge",
+  "description": "Pont ESM vers les couches Python de PICO-RUCHE — envoie des missions à queen (8001) ou des pensées à brain (8003)",
+  "version": "1.0.0",
+  "params": {
+    "command": "string (required) — texte de la mission ou du prompt",
+    "type": "string (default: 'mission') — 'mission' pour queen:8001, 'think' pour brain:8003"
+  },
+  "returns": {
+    "success": "boolean",
+    "result": "object — réponse JSON de la couche Python",
+    "error": "string — message d'erreur si success=false",
+    "layer": "string — type de couche interrogée",
+    "offline": "boolean — true si la couche Python est inaccessible"
+  },
+  "created": "2026-03-13T00:00:00.000Z"
+}

@@ -76,6 +76,48 @@ async def send_telegram(text: str):
         print(f"[Queen] Telegram erreur: {e}")
 
 
+async def telegram_polling_loop():
+    """Boucle de polling Telegram — interroge getUpdates toutes les 2s."""
+    token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    admin_id = os.environ.get("ADMIN_TELEGRAM_ID", "")
+    if not token or not admin_id:
+        print("[Queen] Telegram polling désactivé — TELEGRAM_BOT_TOKEN ou ADMIN_TELEGRAM_ID manquant")
+        return
+
+    offset = 0
+    print("[Queen] Polling Telegram démarré")
+    while VITAL_LOOP_RUNNING:
+        try:
+            async with httpx.AsyncClient(timeout=10) as c:
+                r = await c.get(
+                    f"https://api.telegram.org/bot{token}/getUpdates",
+                    params={"timeout": 1, "offset": offset, "allowed_updates": ["message"]}
+                )
+                data = r.json()
+            for update in data.get("result", []):
+                offset = update["update_id"] + 1
+                message = update.get("message", {})
+                text = message.get("text", "").strip()
+                chat_id = str(message.get("chat", {}).get("id", ""))
+                if chat_id != admin_id:
+                    continue
+                if text.startswith("/mission "):
+                    cmd = text[9:].strip()
+                    if cmd:
+                        asyncio.create_task(execute_mission(cmd))
+                        await send_telegram(f"🐝 Mission lancée: `{cmd}`")
+                elif text.startswith("/status"):
+                    st = await status()
+                    online = sum(1 for v in st["layers"].values() if v.get("status") == "ok")
+                    await send_telegram(
+                        f"🐝 PICO-RUCHE\n{online}/{len(st['layers'])} couches actives\n"
+                        f"Boucle vitale: {'✅' if st['vital_loop'] else '❌'}"
+                    )
+        except Exception as e:
+            print(f"[Queen] Telegram polling erreur: {e}")
+        await asyncio.sleep(2)
+
+
 async def vital_loop():
     global VITAL_LOOP_RUNNING
     VITAL_LOOP_RUNNING = True
@@ -193,6 +235,7 @@ async def execute_mission(input_text: str, auto: bool = False) -> dict:
 async def lifespan(app: FastAPI):
     init_db()
     asyncio.create_task(vital_loop())
+    asyncio.create_task(telegram_polling_loop())
     print("🐝 PICO-RUCHE Agent actif — port 8001")
     yield
     global VITAL_LOOP_RUNNING
