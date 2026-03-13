@@ -63,7 +63,8 @@ function parseJobsYaml(yamlStr) {
         if (key === "enabled") current.enabled = val !== "false";
         else if (key !== "action") current[key] = val;
         inAction = key === "action";
-        if (inAction) actionLines.push(val);
+        // Ne pas pousser le "|" du block scalar YAML comme une commande
+        if (inAction && val !== "|") actionLines.push(val);
       } else if (inAction && line.startsWith("      ")) {
         actionLines.push(trimmed);
       }

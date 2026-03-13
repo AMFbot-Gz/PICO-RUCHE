@@ -1,6 +1,7 @@
 # LaRuche Cron Jobs
 # Format: standard cron expression
 # Agent: which agent executes this job
+# IMPORTANT: les actions sont des commandes bash réelles, pas du langage naturel
 
 version: "1.0"
 
@@ -10,9 +11,9 @@ jobs:
     schedule: "0 3 * * *"
     agent: devops
     action: |
-      Purge les fichiers temporaires dans .laruche/temp/
-      Rotation des logs de plus de 24h
-      Purge des snapshots rollback de plus de 7 jours
+      rm -rf .laruche/temp/* 2>/dev/null || true
+      find agent/logs -name "*.log" -size +5M -exec truncate -s 1M {} \; 2>/dev/null || true
+      find .laruche/snapshots -mtime +7 -delete 2>/dev/null || true
     enabled: true
 
   - id: hourly_health
@@ -20,9 +21,10 @@ jobs:
     schedule: "0 * * * *"
     agent: devops
     action: |
-      Vérifie que Ollama répond sur http://localhost:11434
-      Vérifie l'espace disque disponible
-      Alerte Telegram si problème détecté
+      curl -sf http://localhost:11434/api/tags > /dev/null
+      curl -sf http://localhost:3000/api/health > /dev/null
+      curl -sf http://localhost:8001/health > /dev/null
+      df / | awk 'NR>1{gsub(/%/,""); if($5+0>90){exit 1}}'
     enabled: true
 
   - id: regression_tests
@@ -38,7 +40,7 @@ jobs:
     schedule: "0 9 * * 1-5"
     agent: devops
     action: |
-      Lire les logs d'hier et envoyer un résumé des missions exécutées
+      echo "Briefing: $(date '+%Y-%m-%d')" && tail -20 agent/logs/queen.log
     enabled: false
 
   - id: weekly_memory
@@ -46,6 +48,5 @@ jobs:
     schedule: "0 2 * * 0"
     agent: builder
     action: |
-      Consolider les entrées de workspace/memory/MEMORY.md
-      Supprimer les doublons et compresser les anciens logs de session
+      node scripts/consolidate_memory.js 2>/dev/null || echo "consolidate_memory non disponible"
     enabled: false

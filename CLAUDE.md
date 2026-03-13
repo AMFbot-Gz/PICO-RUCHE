@@ -1,7 +1,7 @@
 # PICO-RUCHE — Ingénieur de référence
 
 ## Vision
-Agent autonome hybride 100% local — Mac M2 16GB.
+Agent autonome hybride 100% local — Intel Core i7-9750H 16GB.
 Node.js Ghost OS v5.0.0 + 7 couches Python FastAPI + 19 skills MCP.
 Zéro cloud requis. Boucle vitale 30s. HITL Telegram.
 
