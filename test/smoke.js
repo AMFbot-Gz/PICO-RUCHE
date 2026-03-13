@@ -243,6 +243,8 @@ await test("route() x20 parallèle < 10ms", async () => {
 console.log(chalk.bold("\n  API REST (LaRuche :3000)"));
 
 const QUEEN_API = process.env.QUEEN_HOST || "http://localhost:3000";
+// IP unique par run pour éviter la pollution du rate-limit entre exécutions
+const SMOKE_IP = `smoke-${Date.now()}`;
 
 async function checkQueen() {
   try {
@@ -264,11 +266,12 @@ if (!queenAvailable) {
   skip("GET /api/subagents → tableau");
 } else {
   // Test : 3 missions en parallèle → toutes reçoivent 202 et ont un missionId unique
+  // SMOKE_IP isole le bucket de rate-limit de ce run pour éviter la pollution entre exécutions
   await test("POST /api/mission x3 parallèle → 202 + missionId unique", async () => {
     const requests = [1, 2, 3].map(() =>
       fetch(`${QUEEN_API}/api/mission`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-forwarded-for": `${SMOKE_IP}-a` },
         body: JSON.stringify({ command: "prends un screenshot smoke test" }),
         signal: AbortSignal.timeout(5000),
       })
@@ -287,14 +290,15 @@ if (!queenAvailable) {
   });
 
   // Test : rate limit → au moins 1 retourne 429 après 35 requêtes rapides
-  // Note : on envoie par batches de 10 pour éviter la saturation du pool HTTP Node.js
+  // IP distincte de celle du test x3 pour avoir un bucket frais à 0
+  // Envoi par batches de 10 pour éviter la saturation du pool HTTP Node.js
   await test("POST /api/mission x35 rapidement → au moins 1 retourne 429", async () => {
     const statuses = [];
     for (let i = 0; i < 35; i += 10) {
       const batch = Array(Math.min(10, 35 - i)).fill(null).map(() =>
         fetch(`${QUEEN_API}/api/mission`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", "x-forwarded-for": `${SMOKE_IP}-b` },
           body: JSON.stringify({ command: "rate limit test" }),
           signal: AbortSignal.timeout(8000),
         }).then(r => r.status)
