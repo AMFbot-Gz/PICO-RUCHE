@@ -366,7 +366,7 @@ async def _handle_telegram_text(text: str):
 # ─── Boucle vitale ─────────────────────────────────────────────────────────────
 
 async def vital_loop():
-    global VITAL_LOOP_RUNNING
+    global VITAL_LOOP_RUNNING, _vital_loop_cycle
     VITAL_LOOP_RUNNING = True
     interval = CONFIG["perception"]["interval_seconds"]
     # Délai initial pour laisser toutes les couches démarrer
