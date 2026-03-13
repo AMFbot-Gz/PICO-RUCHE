@@ -2,7 +2,7 @@
 
 ## Identité
 
-LaRuche v4.1 est un **système multi-agents IA 100% local** qui transforme un Mac en un **contrôleur agentique sémantique** capable d'exécuter n'importe quelle tâche informatique de façon autonome.
+LaRuche v5.0.0 est un **système multi-agents IA 100% local** qui transforme un Mac en un **contrôleur agentique sémantique** capable d'exécuter n'importe quelle tâche informatique de façon autonome.
 
 Ce n'est **pas** un chatbot. C'est un **agent d'action** qui perçoit, planifie, agit et vérifie.
 

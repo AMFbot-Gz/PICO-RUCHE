@@ -8,7 +8,7 @@
 
 ---
 
-[![Tests](https://img.shields.io/badge/tests-172%2F172-22C55E?style=flat-square)](test/)
+[![Tests](https://img.shields.io/badge/tests-530%2F530-22C55E?style=flat-square)](test/)
 [![Version](https://img.shields.io/badge/version-5.0.0-F5A623?style=flat-square)](CHANGELOG.md)
 [![Node.js](https://img.shields.io/badge/Node.js-20+-339933?style=flat-square&logo=node.js)](https://nodejs.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-7C3AED?style=flat-square)](LICENSE)
@@ -352,9 +352,11 @@ swarm:
 ## Tests
 
 ```bash
-npm run test:unit    # 172 tests unitaires (2.7s)
+npm run test:unit    # 243 tests Jest (2.7s)
 npm run test:smoke   # Smoke tests API (serveur requis)
 npm run test:all     # Tout
+python3 -m pytest tests/  # 287 tests Python
+# Total : 530 tests (287 pytest + 243 Jest)
 ```
 
 ---
@@ -385,7 +387,7 @@ LaRuche/
 ├── dashboard/                # React 18 + Vite
 ├── hud/                      # Electron + Ghost Overlay AR
 ├── config/                   # agents.yml, swarm_nodes.yml, perception.yml
-├── test/                     # 172 tests Jest + smoke
+├── test/                     # 243 tests Jest + smoke
 ├── data/                     # learned_routes.json, episodes.jsonl, goals.json
 └── ecosystem.config.js       # PM2 production config
 ```
@@ -396,7 +398,7 @@ LaRuche/
 
 1. Fork le repo
 2. `git checkout -b feat/ma-feature`
-3. `npm run test:unit` — 172 tests doivent passer
+3. `npm run test:unit` — 243 tests Jest + `python3 -m pytest tests/` — 287 tests Python
 4. Ouvre une PR
 
 ---

@@ -34,26 +34,55 @@ ROOT = Path(__file__).resolve().parent
 PIDS_DIR = ROOT / "agent" / ".pids"
 
 # Ordre de démarrage : brain et memory AVANT queen
+# Ordre de démarrage : dépendances d'abord (Memory → Brain → Perception → Executor → Evolution → MCP Bridge → Queen)
 LAYERS = [
-    {
-        "name": "Brain",
-        "file": "agent.brain",
-        "port": 8003,
-        "desc": "llama3:latest",
-        "emoji": "🧠",
-    },
     {
         "name": "Memory",
         "file": "agent.memory",
         "port": 8006,
-        "desc": "episodes.jsonl",
+        "desc": "épisodes JSONL",
         "emoji": "💾",
+    },
+    {
+        "name": "Brain",
+        "file": "agent.brain",
+        "port": 8003,
+        "desc": "Claude API",
+        "emoji": "🧠",
+    },
+    {
+        "name": "Perception",
+        "file": "agent.perception",
+        "port": 8002,
+        "desc": "screenshots + scan",
+        "emoji": "👁️",
+    },
+    {
+        "name": "Executor",
+        "file": "agent.executor",
+        "port": 8004,
+        "desc": "shell sandboxé",
+        "emoji": "⚙️",
+    },
+    {
+        "name": "Evolution",
+        "file": "agent.evolution",
+        "port": 8005,
+        "desc": "auto-amélioration",
+        "emoji": "🧬",
+    },
+    {
+        "name": "MCP Bridge",
+        "file": "agent.mcp_bridge",
+        "port": 8007,
+        "desc": "proxy MCP Node.js",
+        "emoji": "🌉",
     },
     {
         "name": "Queen",
         "file": "agent.queen",
         "port": 8001,
-        "desc": "boucle 30s",
+        "desc": "boucle vitale 30s",
         "emoji": "👑",
     },
 ]
@@ -213,7 +242,7 @@ def main():
     bar = "━" * width
 
     print()
-    print("🐝 PICO-RUCHE v1.1 — Mode éco 3 niveaux — Démarrage")
+    print("🐝 PICO-RUCHE v5.0.0 — 7 couches Python — Démarrage")
     print(bar)
 
     # 1. Vérifier ollama
@@ -265,13 +294,17 @@ def main():
     # 4. Tableau de bord ASCII
     print()
     print(bar)
-    print("🐝 PICO-RUCHE v1.1 — Mode éco 3 niveaux — Tableau de bord")
+    print("🐝 PICO-RUCHE v5.0.0 — Tableau de bord")
     print(bar)
 
     display_order = [
-        ("Brain",  8003, "llama3:latest"),
-        ("Memory", 8006, "episodes.jsonl"),
-        ("Queen",  8001, "boucle 30s"),
+        ("Memory",     8006, "épisodes JSONL"),
+        ("Brain",      8003, "Claude API"),
+        ("Perception", 8002, "screenshots + scan"),
+        ("Executor",   8004, "shell sandboxé"),
+        ("Evolution",  8005, "auto-amélioration"),
+        ("MCP Bridge", 8007, "proxy MCP Node.js"),
+        ("Queen",      8001, "boucle vitale 30s"),
     ]
 
     for name, port, desc in display_order:
@@ -284,7 +317,7 @@ def main():
     tg = "configuré" if telegram_configured() else "non configuré"
     all_ok = all(s.get("ok") for s in layer_status.values())
     hive_status = "Essaim actif" if all_ok else "Essaim partiel — certaines couches KO"
-    print(f"🐝 {hive_status}  |  Telegram: [{tg}]  |  Mode: 3 niveaux (L1 on-demand, L2 planifié)")
+    print(f"🐝 {hive_status}  |  Telegram: [{tg}]  |  v5.0.0 — 7 couches Python")
     print(bar)
 
     if not all_ok:

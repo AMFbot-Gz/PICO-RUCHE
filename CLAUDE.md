@@ -128,9 +128,9 @@ mcp_servers/              ← 9 MCP servers (os-control, terminal, vision...)
 ## Tests
 
 ```bash
-make test                 # pytest (Python) + Jest (Node.js) — total ~340 tests
-npm test                  # 185 tests Jest (21 suites)
-python3 -m pytest tests/  # ~155 tests Python
+make test                 # pytest (Python) + Jest (Node.js) — total 530 tests
+npm test                  # 243 tests Jest
+python3 -m pytest tests/  # 287 tests Python
 npm run test:smoke        # smoke tests
 ```
 
@@ -139,7 +139,7 @@ npm run test:smoke        # smoke tests
 ```bash
 TELEGRAM_BOT_TOKEN=       # @BotFather
 ADMIN_TELEGRAM_ID=        # @userinfobot
-STANDALONE_MODE=false
+STANDALONE_MODE=true              # évite 409 Conflict Telegram
 OLLAMA_HOST=http://localhost:11434
 HITL_TIMEOUT_SECONDS=120
 CHIMERA_SECRET=           # secret HMAC pour la sécurité Chimera Bus
