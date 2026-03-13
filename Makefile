@@ -3,7 +3,7 @@
 # Usage : make <cible>
 # ============================================================
 
-.PHONY: start stop status test preflight install logs clean help
+.PHONY: start stop status test test-python preflight install logs clean help
 
 # Valeurs par défaut
 PYTHON    := python3
@@ -26,9 +26,13 @@ stop:
 status:
 	$(PYTHON) scripts/status_agent.py
 
-## Lance la suite de tests Node.js
-test:
-	npm test
+## Lance les tests Python pytest
+test-python:
+	$(PYTHON) -m pytest tests/ -v --tb=short
+
+## Lance la suite de tests complète (Python + Node.js)
+test: test-python
+	npm run test:unit
 
 ## Vérifie les prérequis (ollama, modèles, .env, dépendances)
 preflight:
