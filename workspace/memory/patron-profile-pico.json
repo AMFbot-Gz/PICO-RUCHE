@@ -1,0 +1,13 @@
+{
+  "timezone": "Europe/Paris",
+  "learned_rules": [
+    "Pour faire un screenshot, il suffit d'utiliser la fonction `computer` avec l'action \"screenshot\" sans paramètres supplémentaires.",
+    "Pour ce type de tâche d'analyse d'environnement : **Toujours décrire méthodiquement ce qui est visible à l'écran en séparant clairement les zones, les éléments interactifs, et les informations contextuelles (date, heure, applications ouvertes).**",
+    "Règle calibration test"
+  ],
+  "platform_knowledge": {},
+  "session_count": 0,
+  "total_tasks_completed": 0,
+  "preferred_apps": {},
+  "common_errors_fixed": []
+}

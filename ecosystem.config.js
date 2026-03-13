@@ -86,5 +86,8 @@ export default {
       error_file: ".laruche/logs/hud-error.log",
       merge_logs: true,
     },
+    // ── PICO extensions ──────────────────────────────────────────────────────
+    { name: 'pico-compressor', script: 'mcp_servers/mcp-compressor/index.js', watch: false, autorestart: true },
+    { name: 'pico-context-manager', script: 'mcp_servers/mcp-context-manager/index.js', watch: false, autorestart: true },
   ],
 };

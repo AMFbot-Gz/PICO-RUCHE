@@ -1,0 +1,32 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "type": "object",
+  "properties": {
+    "id": {"type":"string"},
+    "input": {"type":"string"},
+    "type": {"enum":["code","automation","vision","analysis","mixed","repair"]},
+    "priority": {"type":"integer","minimum":1,"maximum":5},
+    "subtasks": {
+      "type":"array",
+      "items": {
+        "type":"object",
+        "properties": {
+          "id":{"type":"string"},
+          "role":{"enum":["strategist","worker","vision","repair","swarm"]},
+          "instruction":{"type":"string","maxLength":500},
+          "dependencies":{"type":"array","items":{"type":"string"}},
+          "status":{"enum":["pending","running","success","partial","failed","timeout","cancelled"]},
+          "estimatedRisk":{"enum":["low","medium","high"]}
+        },
+        "required":["id","role","instruction"]
+      }
+    },
+    "status": {"enum":["pending","running","success","partial","failed","timeout","cancelled"]},
+    "created_at": {"type":"string","format":"date-time"},
+    "cognitiveLayersUsed": {
+      "type":"array",
+      "items":{"enum":["perception","worldmodel","temporal","simulation","evolution","memory","swarm","market","selfdev","hud"]}
+    }
+  },
+  "required":["id","input","type","subtasks","status","created_at"]
+}

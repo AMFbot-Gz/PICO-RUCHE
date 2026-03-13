@@ -24,7 +24,10 @@
     "install:full": "node scripts/fast_install.js",
     "status": "pm2 status",
     "logs": "pm2 logs laruche-queen",
-    "standalone": "STANDALONE_MODE=true node src/queen_oss.js"
+    "standalone": "STANDALONE_MODE=true node src/queen_oss.js",
+    "phase-check": "bash scripts/phase_check.sh",
+    "install-mlx": "bash scripts/install_mlx.sh",
+    "doctor": "bash scripts/phase_check.sh"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",

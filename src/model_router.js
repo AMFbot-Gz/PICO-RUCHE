@@ -16,6 +16,22 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
+// ─── M2 Detection (PICO extension) ──────────────────────────────────────────
+import { totalmem, freemem } from 'os';
+import { execSync } from 'child_process';
+
+function detectM2Config() {
+  const totalRAM = Math.round(totalmem() / 1024 / 1024 / 1024);
+  const freeRAM = Math.round(freemem() / 1024 / 1024 / 1024);
+  let mlxAvailable = false;
+  try { execSync('python3 -c "import mlx_lm"', { stdio: 'ignore' }); mlxAvailable = true; } catch {}
+  const visionModel = totalRAM >= 24 ? 'llava' : 'moondream';
+  console.info(`[ModelRouter] RAM: ${totalRAM}GB / ${freeRAM}GB libre | MLX: ${mlxAvailable} | Vision: ${visionModel}`);
+  return { totalRAM, freeRAM, mlxAvailable, visionModel };
+}
+
+export const M2_CONFIG = detectM2Config();
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, "..");
 const CONFIG_PATH = join(ROOT, ".laruche/config.json");
@@ -103,6 +119,14 @@ export async function autoDetectRoles() {
     ]),
   };
 
+  // PICO extensions — ajouts sans écraser les rôles existants
+  if (!roles.compressor) {
+    roles.compressor = 'llama3.2:3b';
+  }
+  if (!roles.strategistMLX && M2_CONFIG.mlxAvailable) {
+    roles.strategistMLX = process.env.MLX_MODEL_PATH || './mlx-models/qwen3-7b';
+  }
+
   return roles;
 }
 
@@ -123,7 +147,20 @@ function findBest(available, candidates) {
 export async function route(task, hint = null) {
   const roles = await autoDetectRoles();
 
-  if (hint) return roles[hint] || roles.worker;
+  if (hint) {
+    // PICO extensions
+    if (hint === 'strategist' && M2_CONFIG.mlxAvailable) {
+      return { provider: 'mlx', model: process.env.MLX_MODEL_PATH || './mlx-models/qwen3-7b', endpoint: 'http://127.0.0.1:8080/v1' };
+    }
+    if (hint === 'vision') {
+      const vModel = process.env.VISION_MODEL === 'auto' || !process.env.VISION_MODEL ? M2_CONFIG.visionModel : process.env.VISION_MODEL;
+      return { provider: 'ollama', model: vModel };
+    }
+    if (hint === 'compressor') {
+      return { provider: 'ollama', model: 'llama3.2:3b' };
+    }
+    return roles[hint] || roles.worker;
+  }
 
   const t = task.toLowerCase();
 
