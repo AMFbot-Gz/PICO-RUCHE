@@ -1,6 +1,6 @@
 [
   {
-    "id": "g-1773372368457-zljq",
+    "id": "g-1773384502849-t9oi",
     "description": "Dep",
     "priority": 5,
     "deadline": null,
@@ -8,27 +8,27 @@
     "subgoals": [],
     "status": "pending",
     "reward": 1,
-    "createdAt": "2026-03-13T03:26:08.457Z",
-    "updatedAt": "2026-03-13T03:26:08.457Z",
+    "createdAt": "2026-03-13T06:48:22.849Z",
+    "updatedAt": "2026-03-13T06:48:22.849Z",
     "completedAt": null
   },
   {
-    "id": "g-1773372368457-bxmi",
+    "id": "g-1773384502849-mr74",
     "description": "Bloqué",
     "priority": 5,
     "deadline": null,
     "dependencies": [
-      "g-1773372368457-zljq"
+      "g-1773384502849-t9oi"
     ],
     "subgoals": [],
     "status": "pending",
     "reward": 1,
-    "createdAt": "2026-03-13T03:26:08.457Z",
-    "updatedAt": "2026-03-13T03:26:08.457Z",
+    "createdAt": "2026-03-13T06:48:22.849Z",
+    "updatedAt": "2026-03-13T06:48:22.849Z",
     "completedAt": null
   },
   {
-    "id": "g-1773372368457-sqrl",
+    "id": "g-1773384502849-m4b5",
     "description": "Libre",
     "priority": 5,
     "deadline": null,
@@ -36,8 +36,8 @@
     "subgoals": [],
     "status": "pending",
     "reward": 1,
-    "createdAt": "2026-03-13T03:26:08.457Z",
-    "updatedAt": "2026-03-13T03:26:08.457Z",
+    "createdAt": "2026-03-13T06:48:22.849Z",
+    "updatedAt": "2026-03-13T06:48:22.849Z",
     "completedAt": null
   }
 ]

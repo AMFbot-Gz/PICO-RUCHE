@@ -1,0 +1,9 @@
+{
+  "name": "mouse_control",
+  "description": "Contr\u00f4le la souris macOS via Python Quartz CoreGraphics \u2014 d\u00e9placer, cliquer, cercle demo",
+  "version": "1.0.0",
+  "tier": "learned",
+  "learned_from": "Test de contr\u00f4le souris via HID \u2014 contournement du module HID MCP cass\u00e9",
+  "created": "2026-03-13T23:35:53.559808",
+  "author": "claude-architecte"
+}

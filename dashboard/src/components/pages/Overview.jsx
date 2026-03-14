@@ -1,13 +1,24 @@
 /**
  * Overview.jsx — Page d'accueil du dashboard LaRuche
- * Stat cards + sparkline SVG + ChatFeed + Composer + Ollama indicator
+ * Stat cards + trends + LayerHealthBar + EventBus card + Sparkline + ChatFeed + Composer
  */
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import ChatFeed from "../ChatFeed.jsx";
 import Composer from "../Composer.jsx";
 
 const QUEEN_API = import.meta.env.VITE_QUEEN_API || "http://localhost:3000";
+
+// Couches Python et leurs ports
+const LAYERS = [
+  { name: "Queen Python", port: 8001 },
+  { name: "Perception",   port: 8002 },
+  { name: "Brain",        port: 8003 },
+  { name: "Executor",     port: 8004 },
+  { name: "Evolution",    port: 8005 },
+  { name: "Memory",       port: 8006 },
+  { name: "MCP Bridge",   port: 8007 },
+];
 
 // ─── Skeleton shimmer ─────────────────────────────────────────────────────────
 function Skeleton({ w = "100%", h = 16, radius = 6 }) {
@@ -21,8 +32,18 @@ function Skeleton({ w = "100%", h = 16, radius = 6 }) {
   );
 }
 
-// ─── Stat Card ────────────────────────────────────────────────────────────────
-function StatCard({ label, value, sub, color, icon, loading }) {
+// ─── Stat Card (avec trend indicator) ────────────────────────────────────────
+function StatCard({ label, value, sub, color, icon, loading, prevValue }) {
+  // Calcul du trend : compare value numérique avec prevValue
+  let trend = null;
+  if (!loading && prevValue !== undefined && prevValue !== null) {
+    const curr = parseFloat(String(value).replace(/[^0-9.]/g, ""));
+    const prev = parseFloat(String(prevValue).replace(/[^0-9.]/g, ""));
+    if (!isNaN(curr) && !isNaN(prev) && prev !== 0) {
+      trend = Math.round(((curr - prev) / Math.abs(prev)) * 100);
+    }
+  }
+
   return (
     <div style={{
       background: "var(--surface-2)",
@@ -53,10 +74,113 @@ function StatCard({ label, value, sub, color, icon, loading }) {
           letterSpacing: "-0.02em",
         }}>{value}</div>
       )}
-      {sub && !loading && (
-        <div style={{ fontSize: 12, color: "var(--text-3)" }}>{sub}</div>
+      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        {sub && !loading && (
+          <div style={{ fontSize: 12, color: "var(--text-3)" }}>{sub}</div>
+        )}
+        {loading && <Skeleton w="60%" h={12} />}
+        {trend !== null && !loading && (
+          <span style={{
+            fontSize: 11,
+            fontWeight: 600,
+            color: trend >= 0 ? "var(--green)" : "var(--red)",
+            marginLeft: "auto",
+            flexShrink: 0,
+          }}>
+            {trend >= 0 ? `↑ +${trend}%` : `↓ ${trend}%`}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Amélioration B — Layer Health Bar ────────────────────────────────────────
+function LayerHealthBar({ layers }) {
+  const alive = layers.filter(l => l.ok).length;
+  return (
+    <div style={{
+      display: "flex",
+      gap: 8,
+      alignItems: "center",
+      padding: "12px 16px",
+      background: "var(--surface-2)",
+      borderRadius: "var(--radius)",
+      border: "1px solid var(--border-2)",
+      marginBottom: 20,
+      flexWrap: "wrap",
+    }}>
+      <span style={{ color: "var(--text-3)", fontSize: 12, marginRight: 4 }}>Couches :</span>
+      {layers.map(l => (
+        <div
+          key={l.name}
+          title={`${l.name} (${l.port}) — ${l.ok ? "OK" : "DOWN"}`}
+          style={{
+            width: 8,
+            height: 8,
+            borderRadius: "50%",
+            background: l.ok ? "var(--green)" : "var(--red)",
+            boxShadow: l.ok ? "0 0 6px var(--green)" : "0 0 6px var(--red)",
+            flexShrink: 0,
+          }}
+        />
+      ))}
+      <span style={{ color: "var(--text-3)", fontSize: 11, marginLeft: 4 }}>
+        {alive}/{layers.length} actives
+      </span>
+    </div>
+  );
+}
+
+// ─── Amélioration C — EventBus metrics card ───────────────────────────────────
+function EventBusCard({ data, loading }) {
+  const emitted   = data?.events?.emitted   ?? data?.emitted   ?? null;
+  const processed = data?.events?.processed ?? data?.processed ?? null;
+  const failed    = data?.events?.failed    ?? data?.failed    ?? null;
+
+  const hasData = emitted !== null || processed !== null || failed !== null;
+
+  return (
+    <div style={{
+      background: "var(--surface-2)",
+      border: "1px solid var(--border-2)",
+      borderRadius: "var(--radius-lg)",
+      padding: "16px 20px",
+      display: "flex",
+      alignItems: "center",
+      gap: 16,
+      flexWrap: "wrap",
+    }}>
+      <div style={{ fontSize: 12, color: "var(--text-3)", fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.05em", flexShrink: 0 }}>
+        EventBus
+      </div>
+      {loading ? (
+        <Skeleton w={200} h={20} radius={4} />
+      ) : !hasData ? (
+        <span style={{ fontSize: 12, color: "var(--text-3)" }}>Aucune donnée EventBus</span>
+      ) : (
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          {[
+            { label: "émis",     value: emitted,   color: "var(--blue)"   },
+            { label: "traités",  value: processed, color: "var(--green)"  },
+            { label: "échoués",  value: failed,    color: "var(--red)"    },
+          ].map(({ label, value, color }) => value !== null && (
+            <span key={label} style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 5,
+              padding: "4px 10px",
+              background: "var(--surface-3)",
+              border: "1px solid var(--border)",
+              borderRadius: 20,
+              fontSize: 12,
+            }}>
+              <span style={{ fontWeight: 700, color }}>{value}</span>
+              <span style={{ color: "var(--text-3)" }}>{label}</span>
+            </span>
+          ))}
+        </div>
       )}
-      {loading && <Skeleton w="60%" h={12} />}
     </div>
   );
 }
@@ -115,6 +239,15 @@ export default function Overview({ status: statusProp, wsEvents = [] }) {
   // Données sparkline mockées avec animation légère
   const [sparkData, setSparkData] = useState([4, 7, 3, 9, 5, 11, 8, 14, 10, 12, 9, 16]);
 
+  // Amélioration B — santé des couches Python
+  const [layers, setLayers] = useState(LAYERS.map(l => ({ ...l, ok: false })));
+
+  // Amélioration C — métriques EventBus (depuis /api/status)
+  // On réutilise `status` qui est déjà fetché — les champs events sont extraits à l'usage
+
+  // Trend : valeurs précédentes pour les stat cards
+  const prevStatsRef = useRef({ totalMissions: null, successRate: null, activeAgents: null, uptimeMin: null });
+
   // Sync status from parent prop when it changes
   useEffect(() => {
     if (statusProp) setStatus(statusProp);
@@ -139,11 +272,30 @@ export default function Overview({ status: statusProp, wsEvents = [] }) {
     }
   }, []);
 
+  // Fetch santé des 7 couches Python en parallèle (toutes les 15s)
+  const fetchLayers = useCallback(async () => {
+    const results = await Promise.allSettled(
+      LAYERS.map(l =>
+        fetch(`http://localhost:${l.port}/health`, { signal: AbortSignal.timeout(2500) })
+          .then(r => ({ ...l, ok: r.ok }))
+          .catch(() => ({ ...l, ok: false }))
+      )
+    );
+    setLayers(results.map(r => r.status === "fulfilled" ? r.value : { ok: false }));
+  }, []);
+
   useEffect(() => {
     fetchData();
     const interval = setInterval(fetchData, 10000);
     return () => clearInterval(interval);
   }, [fetchData]);
+
+  // Fetch couches Python toutes les 15s
+  useEffect(() => {
+    fetchLayers();
+    const t = setInterval(fetchLayers, 15000);
+    return () => clearInterval(t);
+  }, [fetchLayers]);
 
   // Animation sparkline — ajoute un point toutes les 3s
   useEffect(() => {
@@ -158,19 +310,31 @@ export default function Overview({ status: statusProp, wsEvents = [] }) {
   }, []);
 
   // Stats calculées
-  const totalMissions  = status?.missions?.total || 0;
+  const totalMissions   = status?.missions?.total || 0;
   const successMissions = status?.missions?.success || 0;
-  const successRate    = totalMissions > 0
+  const successRate     = totalMissions > 0
     ? Math.round((successMissions / totalMissions) * 100)
     : 0;
-  const activeAgents   = status?.models ? Object.keys(status.models).length : 0;
-  const uptimeMin      = status?.uptime ? Math.floor(status.uptime / 60) : 0;
-  const uptimeDisplay  = uptimeMin >= 60
+  const activeAgents    = status?.models ? Object.keys(status.models).length : 0;
+  const uptimeMin       = status?.uptime ? Math.floor(status.uptime / 60) : 0;
+  const uptimeDisplay   = uptimeMin >= 60
     ? `${Math.floor(uptimeMin / 60)}h ${uptimeMin % 60}m`
     : `${uptimeMin}m`;
 
   const ollamaOk      = status?.ollama?.ok;
   const ollamaLatency = status?.ollama?.latencyMs;
+
+  // Valeurs précédentes pour trends (capturées avant la prochaine mise à jour)
+  const prevStats = prevStatsRef.current;
+  useEffect(() => {
+    if (!loading && totalMissions > 0) {
+      // On stocke un cycle après pour avoir une comparaison
+      const t = setTimeout(() => {
+        prevStatsRef.current = { totalMissions, successRate, activeAgents, uptimeMin };
+      }, 100);
+      return () => clearTimeout(t);
+    }
+  }, [loading, totalMissions, successRate, activeAgents, uptimeMin]);
 
   return (
     <div style={{
@@ -239,6 +403,9 @@ export default function Overview({ status: statusProp, wsEvents = [] }) {
         </div>
       </div>
 
+      {/* ── Amélioration B — Layer Health Bar ── */}
+      <LayerHealthBar layers={layers} />
+
       {/* ── Stat Cards ── */}
       <div style={{
         display: "grid",
@@ -252,6 +419,7 @@ export default function Overview({ status: statusProp, wsEvents = [] }) {
           color="var(--text)"
           icon="🎯"
           loading={loading}
+          prevValue={prevStats.totalMissions}
         />
         <StatCard
           label="Taux de succès"
@@ -260,6 +428,7 @@ export default function Overview({ status: statusProp, wsEvents = [] }) {
           color={successRate >= 80 ? "var(--green)" : successRate >= 50 ? "var(--yellow)" : "var(--red)"}
           icon="✅"
           loading={loading}
+          prevValue={prevStats.successRate !== null ? `${prevStats.successRate}%` : null}
         />
         <StatCard
           label="Agents actifs"
@@ -268,6 +437,7 @@ export default function Overview({ status: statusProp, wsEvents = [] }) {
           color="var(--primary)"
           icon="🤖"
           loading={loading}
+          prevValue={prevStats.activeAgents}
         />
         <StatCard
           label="Uptime"
@@ -276,8 +446,12 @@ export default function Overview({ status: statusProp, wsEvents = [] }) {
           color="var(--cyan)"
           icon="⏱"
           loading={loading}
+          prevValue={prevStats.uptimeMin}
         />
       </div>
+
+      {/* ── Amélioration C — EventBus metrics card ── */}
+      <EventBusCard data={status} loading={loading} />
 
       {/* ── Sparkline missions ── */}
       <div style={{

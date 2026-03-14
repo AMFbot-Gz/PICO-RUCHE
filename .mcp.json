@@ -2,8 +2,11 @@
   "mcpServers": {
     "pencil": {
       "type": "stdio",
-      "command": "/private/var/folders/93/bs2m5zh535zdqd_rqq307s0h0000gn/T/AppTranslocation/31894E7E-004C-4F34-BAD6-6EDC696498FB/d/Pencil.app/Contents/Resources/app.asar.unpacked/out/mcp-server-darwin-x64",
-      "args": ["--app", "desktop"],
+      "command": "/Applications/Pencil.app/Contents/Resources/app.asar.unpacked/out/mcp-server-darwin-x64",
+      "args": [
+        "--app",
+        "desktop"
+      ],
       "env": {}
     }
   }

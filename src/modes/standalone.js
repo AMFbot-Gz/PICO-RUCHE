@@ -12,6 +12,7 @@ import { serve } from "@hono/node-server";
 import { createMissionsRoutes } from "../api/missions.js";
 import { createMcpRoutes } from "../api/mcp_routes.js";
 import { createMutationsRoutes } from "../api/mutations.js";
+import { registerConfigRoutes } from "../api/config_routes.js";
 import { startCoeusLoop } from "../agents/coeus.js";
 
 /**
@@ -52,6 +53,7 @@ export function startStandaloneServer(deps) {
   // Endpoints directs vers les modules MCP Node.js (os-control, terminal, etc.)
   createMcpRoutes(app);
   createMutationsRoutes(app);
+  registerConfigRoutes(app);
 
   // ─── Route racine ───────────────────────────────────────────────────────────
   app.get("/", (c) =>

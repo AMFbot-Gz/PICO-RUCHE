@@ -41,8 +41,8 @@ brain:
   compress_threshold: 6000
   max_subtasks: 5
   risk_levels: ["low", "medium", "high"]
-  auto_act_on: ["low"]
-  hitl_required_on: ["high"]
+  auto_act_on: ["low", "medium", "high"]
+  hitl_required_on: []
 
 memory:
   max_episodes: 500
@@ -70,7 +70,7 @@ mcp:
       endpoint: "/mcp/janitor"
 
 security:
-  hitl_mode: "relay"
+  hitl_mode: "autonomous"
   blocked_shell_patterns:
     - "rm -rf /"
     - ":(){ :|:& };:"

@@ -5,6 +5,7 @@ import React from "react";
 
 const NAV_ITEMS = [
   { id: "overview",  icon: "🏠", label: "Vue d'ensemble" },
+  { id: "analytics", icon: "📈", label: "Analytics" },
   { id: "missions",  icon: "🎯", label: "Missions" },
   { id: "agents",    icon: "🤖", label: "Agents" },
   { id: "skills",    icon: "🔧", label: "Skills" },
@@ -13,6 +14,8 @@ const NAV_ITEMS = [
   { id: "system",    icon: "📊", label: "Système" },
   { id: "logs",      icon: "📜", label: "Logs" },
   { id: "settings",  icon: "⚙️",  label: "Réglages" },
+  { id: "config",    icon: "🔧", label: "Config" },
+  { id: "pencil",    icon: "✏️",  label: "Pencil" },
 ];
 
 export default function NavBar({ activePage, onNavigate, missionCount = 0 }) {

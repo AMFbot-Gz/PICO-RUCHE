@@ -1,11 +1,11 @@
 {
   "system": {
-    "cpu_percent": 62,
-    "ram_used_gb": 9.1,
-    "ram_total_gb": 16,
-    "ram_percent": 56.9,
-    "disk_used_gb": 185,
-    "disk_free_gb": 115,
+    "cpu_percent": 5.0,
+    "ram_used_gb": 9.07,
+    "ram_total_gb": 17.18,
+    "ram_percent": 66.2,
+    "disk_used_gb": 12.26,
+    "disk_free_gb": 252.29,
     "processes": [
       {
         "pid": 1234,
@@ -15,7 +15,7 @@
       }
     ]
   },
-  "updated_at": "2026-03-13T05:26:54.601332+00:00",
+  "updated_at": "2026-03-14T01:11:16.671909+00:00",
   "active_app": {
     "name": "Terminal",
     "window_title": null,
@@ -34,9 +34,8 @@
   },
   "agent_market": {
     "credits": {
-      "test_integration_agent_1773380276254": 490,
-      "queen": 1000
+      "test_integration_agent_1773386727039": 490
     },
-    "last_updated": "2026-03-13T05:53:05.404Z"
+    "last_updated": "2026-03-13T07:25:27.042Z"
   }
 }
